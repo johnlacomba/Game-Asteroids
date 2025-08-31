@@ -49,21 +49,25 @@ export default class Asteroid {
     }
   }
 
-  update(width, height) {
+  update(worldWidth, worldHeight) {
     this.position.x += this.velocity.x;
     this.position.y += this.velocity.y;
     this.rotation += this.rotationSpeed;
 
-    // Screen wrap
-    if (this.position.x > width + this.radius) {
-      this.position.x = -this.radius;
-    } else if (this.position.x < -this.radius) {
-      this.position.x = width + this.radius;
+    // World bounds collision (bounce)
+    if (this.position.x < this.radius) {
+      this.position.x = this.radius;
+      this.velocity.x *= -1;
+    } else if (this.position.x > worldWidth - this.radius) {
+      this.position.x = worldWidth - this.radius;
+      this.velocity.x *= -1;
     }
-    if (this.position.y > height + this.radius) {
-      this.position.y = -this.radius;
-    } else if (this.position.y < -this.radius) {
-      this.position.y = height + this.radius;
+    if (this.position.y < this.radius) {
+      this.position.y = this.radius;
+      this.velocity.y *= -1;
+    } else if (this.position.y > worldHeight - this.radius) {
+      this.position.y = worldHeight - this.radius;
+      this.velocity.y *= -1;
     }
   }
 

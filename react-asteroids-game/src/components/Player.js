@@ -70,7 +70,7 @@ export default class Player {
     this.velocity.y += Math.cos(-this.rotation * Math.PI / 180) * (this.speed / 2);
   }
 
-  update(keys, width, height) {
+  update(keys, worldWidth, worldHeight) {
     if (keys.a) {
       this.rotate('LEFT');
     }
@@ -92,16 +92,31 @@ export default class Player {
     this.position.x += this.velocity.x;
     this.position.y += this.velocity.y;
 
-    // Screen wrap
-    if (this.position.x > width + this.radius) {
-      this.position.x = -this.radius;
-    } else if (this.position.x < -this.radius) {
-      this.position.x = width + this.radius;
+    // World bounds collision using polygon vertices
+    const polygon = this.getPolygon();
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+
+    for (const point of polygon) {
+      minX = Math.min(minX, point.x);
+      maxX = Math.max(maxX, point.x);
+      minY = Math.min(minY, point.y);
+      maxY = Math.max(maxY, point.y);
     }
-    if (this.position.y > height + this.radius) {
-      this.position.y = -this.radius;
-    } else if (this.position.y < -this.radius) {
-      this.position.y = height + this.radius;
+
+    if (minX < 0) {
+      this.position.x += -minX;
+      this.velocity.x *= -0.75;
+    } else if (maxX > worldWidth) {
+      this.position.x -= (maxX - worldWidth);
+      this.velocity.x *= -0.75;
+    }
+
+    if (minY < 0) {
+      this.position.y += -minY;
+      this.velocity.y *= -0.75;
+    } else if (maxY > worldHeight) {
+      this.position.y -= (maxY - worldHeight);
+      this.velocity.y *= -0.75;
     }
   }
 
