@@ -38,15 +38,15 @@ export default class Asteroid {
     });
   }
 
-  destroy() {
-    this.delete = true;
-  }
-
   hit() {
     this.hitPoints--;
     if (this.hitPoints <= 0) {
       this.destroy();
     }
+  }
+
+  destroy() {
+    this.delete = true;
   }
 
   update(worldWidth, worldHeight) {

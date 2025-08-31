@@ -43,12 +43,37 @@ export default class Player {
     return debris;
   }
 
-  shoot() {
-    const bulletPosition = {
-      x: this.position.x - Math.sin(-this.rotation * Math.PI / 180) * this.radius,
-      y: this.position.y - Math.cos(-this.rotation * Math.PI / 180) * this.radius,
+  shoot(activePowerups) {
+    const bullets = [];
+    const isHoming = activePowerups.has('homingShot');
+    const isPowerShot = activePowerups.has('powerShot');
+
+    const createBullet = (rotationAngle) => {
+      // Each bullet needs a DEEP COPY of the position object.
+      // By creating the position object inside this function, we guarantee
+      // each bullet gets a unique object in memory.
+      const bulletInfo = {
+        position: {
+          x: this.position.x + Math.sin(this.rotation * Math.PI / 180) * this.radius,
+          y: this.position.y - Math.cos(this.rotation * Math.PI / 180) * this.radius,
+        },
+        homing: isHoming,
+        powerShot: isPowerShot,
+        rotation: rotationAngle,
+      };
+      return new Bullet(bulletInfo);
     };
-    return new Bullet({ position: bulletPosition, rotation: this.rotation });
+
+    // Main bullet (forward)
+    bullets.push(createBullet(this.rotation));
+
+    // Spread shot
+    if (activePowerups.has('spreadShot')) {
+      bullets.push(createBullet(this.rotation - 45));
+      bullets.push(createBullet(this.rotation + 45));
+    }
+
+    return bullets;
   }
 
   rotate(dir) {
@@ -70,7 +95,11 @@ export default class Player {
     this.velocity.y += Math.cos(-this.rotation * Math.PI / 180) * (this.speed / 2);
   }
 
-  update(keys, worldWidth, worldHeight) {
+  update(keys, worldWidth, worldHeight, activePowerups) {
+    const speedUpPowerup = activePowerups.get('speedUp');
+    const speedMultiplier = speedUpPowerup ? 2 ** speedUpPowerup.stack : 1;
+    const currentSpeed = this.speed * speedMultiplier;
+
     if (keys.a) {
       this.rotate('LEFT');
     }
@@ -78,15 +107,25 @@ export default class Player {
       this.rotate('RIGHT');
     }
     if (keys.w) {
-      this.accelerate();
+      this.velocity.x -= Math.sin(-this.rotation * Math.PI / 180) * currentSpeed;
+      this.velocity.y -= Math.cos(-this.rotation * Math.PI / 180) * currentSpeed;
     }
     if (keys.s) {
-      this.decelerate();
+      this.velocity.x += Math.sin(-this.rotation * Math.PI / 180) * (currentSpeed / 2);
+      this.velocity.y += Math.cos(-this.rotation * Math.PI / 180) * (currentSpeed / 2);
     }
 
     // Apply inertia
     this.velocity.x *= this.inertia;
     this.velocity.y *= this.inertia;
+
+    // Enforce maximum speed cap
+    const maxSpeed = 16;
+    const currentVelocityMagnitude = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y);
+    if (currentVelocityMagnitude > maxSpeed) {
+      this.velocity.x = (this.velocity.x / currentVelocityMagnitude) * maxSpeed;
+      this.velocity.y = (this.velocity.y / currentVelocityMagnitude) * maxSpeed;
+    }
 
     // Update position
     this.position.x += this.velocity.x;

@@ -3,6 +3,7 @@ import Player from './Player';
 import Asteroid from './Asteroid';
 import Debris from './Debris';
 import UFO from './UFO';
+import Powerup from './Powerup';
 import { handleInput } from '../core/inputController';
 import { checkPolygonCollision, checkCirclePolygonCollision } from '../core/collision';
 
@@ -12,20 +13,31 @@ const Game = () => {
   const ufoBulletsRef = useRef([]);
   const asteroidsRef = useRef([]);
   const debrisRef = useRef([]);
+  const powerupsRef = useRef([]);
   const ufoRef = useRef(null);
+  const ufosRef = useRef([]); // For multiple UFOs
   const playerRef = useRef(null);
-  const starsRef = useRef([]); // Ref to store star positions
+  const starsRef = useRef([]);
   const shootCooldownRef = useRef(0);
   const waveCountRef = useRef(30);
   const [isGameOver, setIsGameOver] = useState(false);
   const [resetKey, setResetKey] = useState(0);
   const gameOverRef = useRef(false);
   const scoreRef = useRef(0);
+  const activePowerupsRef = useRef(new Map());
   const ufoSpawnTimerRef = useRef(0);
+  const ufoWaveTimerRef = useRef(0);
+  const totalPowerupsCollectedRef = useRef(0);
+  const ufoSwarmFlashTimerRef = useRef(0);
   const UFO_SPAWN_TIME = 30 * 60;
-  const SHOOT_COOLDOWN = 15;
+  const UFO_WAVE_INTERVAL = 15 * 60; // 15 seconds between waves
+  const BASE_SHOOT_COOLDOWN = 15;
   const WORLD_WIDTH = 3000;
   const WORLD_HEIGHT = 2000;
+  const POWERUP_TYPES = ['rapidFire', 'invulnerability', 'spreadShot', 'homingShot', 'speedUp', 'powerShot'];
+  const POWERUP_THRESHOLD = 5; // Trigger UFO waves after 5 powerups
+  const UFO_SWARM_SIZE = 36; // Three dozen UFOs per wave
+  const UFO_FLASH_DURATION = 120; // 2 seconds at 60fps
 
   useEffect(() => {
     const handleRestart = (e) => {
@@ -35,13 +47,19 @@ const Game = () => {
         bulletsRef.current = [];
         ufoBulletsRef.current = [];
         debrisRef.current = [];
+        powerupsRef.current = [];
         ufoRef.current = null;
+        ufosRef.current = [];
 
         // Reset game state refs
         scoreRef.current = 0;
         gameOverRef.current = false;
         waveCountRef.current = 30;
+        activePowerupsRef.current.clear();
         ufoSpawnTimerRef.current = 0;
+        ufoWaveTimerRef.current = 0;
+        totalPowerupsCollectedRef.current = 0;
+        ufoSwarmFlashTimerRef.current = 0;
         shootCooldownRef.current = 0;
 
         // Trigger a full re-initialization of the game
@@ -83,6 +101,35 @@ const Game = () => {
     });
     playerRef.current = player;
 
+    const spawnPowerup = (position) => {
+      if (Math.random() < 0.2) {
+        const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+        powerupsRef.current.push(new Powerup({ position, type }));
+      }
+    };
+
+    const activatePowerup = (type) => {
+      const durations = {
+        rapidFire: 30 * 60,
+        invulnerability: 10 * 60,
+        spreadShot: 30 * 60,
+        homingShot: 30 * 60,
+        speedUp: 60 * 60,
+        powerShot: 30 * 60,
+      };
+      
+      const existing = activePowerupsRef.current.get(type);
+      const stack = existing ? existing.stack + 1 : 1;
+
+      activePowerupsRef.current.set(type, {
+        duration: durations[type],
+        stack: stack,
+      });
+
+      // Increment total powerups collected
+      totalPowerupsCollectedRef.current++;
+    };
+
     const spawnUFO = () => {
       const side = Math.floor(Math.random() * 4);
       let position, velocity;
@@ -107,7 +154,16 @@ const Game = () => {
           velocity = { x: speed, y: Math.random() * 2 - 1 };
           break;
       }
-      ufoRef.current = new UFO({ position, velocity });
+      return new UFO({ position, velocity });
+    };
+
+    const spawnUFOWave = () => {
+      // Spawn all UFOs at once
+      for (let i = 0; i < UFO_SWARM_SIZE; i++) {
+        ufosRef.current.push(spawnUFO());
+      }
+      // Trigger flash notification
+      ufoSwarmFlashTimerRef.current = UFO_FLASH_DURATION;
     };
 
     const spawnAsteroids = (count) => {
@@ -143,27 +199,57 @@ const Game = () => {
     const gameLoop = () => {
       const currentPlayer = playerRef.current;
 
+      // Update active powerups
+      activePowerupsRef.current.forEach((powerup, type) => {
+        if (powerup.duration - 1 <= 0) {
+          activePowerupsRef.current.delete(type);
+        } else {
+          powerup.duration--;
+        }
+      });
+
+      // Update UFO swarm flash timer
+      if (ufoSwarmFlashTimerRef.current > 0) {
+        ufoSwarmFlashTimerRef.current--;
+      }
+
       // Only handle player input if the game is not over
       if (!gameOverRef.current) {
         if (shootCooldownRef.current > 0) {
           shootCooldownRef.current--;
         }
         const keys = handleInput();
+        
+        const rapidFirePowerup = activePowerupsRef.current.get('rapidFire');
+        const rapidFireMultiplier = rapidFirePowerup ? 5 ** rapidFirePowerup.stack : 1;
+        const shootCooldown = BASE_SHOOT_COOLDOWN / rapidFireMultiplier;
+
         // Handle shooting
         if (keys[' '] && shootCooldownRef.current <= 0) {
-          bulletsRef.current.push(currentPlayer.shoot());
-          shootCooldownRef.current = SHOOT_COOLDOWN;
+          const newBullets = currentPlayer.shoot(activePowerupsRef.current);
+          bulletsRef.current.push(...newBullets);
+          shootCooldownRef.current = shootCooldown;
         }
         // Update player
-        currentPlayer.update(keys, WORLD_WIDTH, WORLD_HEIGHT);
+        currentPlayer.update(keys, WORLD_WIDTH, WORLD_HEIGHT, activePowerupsRef.current);
       }
 
-      // UFO Spawn Logic
+      // UFO Spawn Logic - Check if we should switch to wave mode
       if (!gameOverRef.current) {
-        ufoSpawnTimerRef.current++;
-        if (!ufoRef.current && ufoSpawnTimerRef.current > UFO_SPAWN_TIME) {
-          spawnUFO();
-          ufoSpawnTimerRef.current = 0;
+        if (totalPowerupsCollectedRef.current >= POWERUP_THRESHOLD) {
+          // Switch to overwhelming UFO wave mode
+          ufoWaveTimerRef.current++;
+          if (ufoWaveTimerRef.current >= UFO_WAVE_INTERVAL) {
+            spawnUFOWave();
+            ufoWaveTimerRef.current = 0;
+          }
+        } else {
+          // Normal single UFO spawning
+          ufoSpawnTimerRef.current++;
+          if (!ufoRef.current && ufoSpawnTimerRef.current > UFO_SPAWN_TIME) {
+            ufoRef.current = spawnUFO();
+            ufoSpawnTimerRef.current = 0;
+          }
         }
       }
 
@@ -196,7 +282,7 @@ const Game = () => {
         currentPlayer.draw(context);
       }
 
-      // Update and draw UFO
+      // Update and draw single UFO (legacy mode)
       if (ufoRef.current) {
         const newUfoBullets = ufoRef.current.update(WORLD_WIDTH, WORLD_HEIGHT, currentPlayer.position);
         ufoBulletsRef.current.push(...newUfoBullets);
@@ -207,11 +293,23 @@ const Game = () => {
         }
       }
 
+      // Update and draw UFO swarm
+      ufosRef.current.forEach(ufo => {
+        const newUfoBullets = ufo.update(WORLD_WIDTH, WORLD_HEIGHT, currentPlayer.position);
+        ufoBulletsRef.current.push(...newUfoBullets);
+        ufo.draw(context);
+      });
+
+      // Update and draw powerups
+      powerupsRef.current.forEach(p => p.update(WORLD_WIDTH, WORLD_HEIGHT));
+      powerupsRef.current.forEach(p => p.draw(context));
+
       // Update and draw asteroids, bullets, and debris
       asteroidsRef.current.forEach(asteroid => asteroid.update(WORLD_WIDTH, WORLD_HEIGHT));
       asteroidsRef.current.forEach(asteroid => asteroid.draw(context));
 
-      bulletsRef.current.forEach(bullet => bullet.update(WORLD_WIDTH, WORLD_HEIGHT));
+      const homingTargets = [...asteroidsRef.current, ...(ufoRef.current ? [ufoRef.current] : []), ...ufosRef.current];
+      bulletsRef.current.forEach(bullet => bullet.update(WORLD_WIDTH, WORLD_HEIGHT, homingTargets));
       bulletsRef.current.forEach(bullet => bullet.draw(context));
 
       ufoBulletsRef.current.forEach(bullet => bullet.update(WORLD_WIDTH, WORLD_HEIGHT));
@@ -231,74 +329,134 @@ const Game = () => {
       context.textBaseline = 'top';
       context.fillText(`Score: ${scoreRef.current}`, 20, 20);
 
+      // Draw UFO Swarm Flash Notification (if active)
+      if (ufoSwarmFlashTimerRef.current > 0) {
+        const flashIntensity = Math.sin((UFO_FLASH_DURATION - ufoSwarmFlashTimerRef.current) * 0.3) * 0.5 + 0.5;
+        const alpha = flashIntensity;
+        context.fillStyle = `rgba(255, 0, 0, ${alpha})`;
+        context.font = 'bold 36px Arial';
+        context.textAlign = 'center';
+        context.fillText('UFO SWARM INCOMING!', canvas.width / 2, 50);
+        context.textAlign = 'left'; // Reset alignment
+        context.font = '24px Arial'; // Reset font
+        context.fillStyle = 'white'; // Reset color
+      }
+
+      // Draw Active Powerups
+      let powerupY = 50;
+      activePowerupsRef.current.forEach((powerup, type) => {
+        const seconds = Math.ceil(powerup.duration / 60);
+        const stackText = powerup.stack > 1 ? ` (x${powerup.stack})` : '';
+        context.fillText(`${type}${stackText}: ${seconds}s`, 20, powerupY);
+        powerupY += 25;
+      });
+
       // Collision Detection: Bullets with Asteroids
       bulletsRef.current.forEach(bullet => {
         asteroidsRef.current.forEach(asteroid => {
           if (checkCirclePolygonCollision(bullet, asteroid.getPolygon())) {
             bullet.delete = true;
-            if (asteroid.hitPoints - 1 <= 0) {
+            const damage = bullet.damage || 1;
+            let hitPointsRemaining = asteroid.hitPoints - damage;
+            
+            if (hitPointsRemaining <= 0) {
               scoreRef.current += 100;
+              spawnPowerup(asteroid.position);
+              asteroid.destroy();
+            } else {
+              for (let i = 0; i < damage; i++) {
+                asteroid.hit();
+                if (asteroid.delete) break;
+              }
             }
-            asteroid.hit();
           }
         });
       });
 
-      // Collision Detection: Bullets with UFO
-      if (ufoRef.current) {
-        const ufoPolygon = ufoRef.current.getPolygon();
+      // Collision Detection: Bullets with UFOs (both single and swarm)
+      const allUfos = [...(ufoRef.current ? [ufoRef.current] : []), ...ufosRef.current];
+      allUfos.forEach(ufo => {
+        const ufoPolygon = ufo.getPolygon();
         bulletsRef.current.forEach(bullet => {
           if (!bullet.delete && checkCirclePolygonCollision(bullet, ufoPolygon)) {
             bullet.delete = true;
-            ufoRef.current.destroy();
-            scoreRef.current += 500; // UFO is worth more points
+            ufo.destroy();
+            scoreRef.current += 500;
+            spawnPowerup(ufo.position);
           }
         });
-      }
+      });
 
       // Collision Detection: UFO Bullets with Player
       if (!gameOverRef.current) {
         const playerPolygon = currentPlayer.getPolygon();
         ufoBulletsRef.current.forEach(bullet => {
           if (checkCirclePolygonCollision(bullet, playerPolygon)) {
-            bullet.delete = true;
-            debrisRef.current = debrisRef.current.concat(currentPlayer.destroy());
-            gameOverRef.current = true;
-            setIsGameOver(true);
+            if (activePowerupsRef.current.has('invulnerability')) {
+              bullet.delete = true;
+            } else {
+              bullet.delete = true;
+              debrisRef.current = debrisRef.current.concat(currentPlayer.destroy());
+              gameOverRef.current = true;
+              setIsGameOver(true);
+            }
           }
         });
       }
 
-      // Collision Detection: Player with Asteroids (only if game not over)
+      // Collision Detection: Player with Powerups
+      if (!gameOverRef.current) {
+        const playerPolygon = currentPlayer.getPolygon();
+        powerupsRef.current.forEach(powerup => {
+          if (checkPolygonCollision(playerPolygon, powerup.getPolygon())) {
+            powerup.destroy();
+            activatePowerup(powerup.type);
+          }
+        });
+      }
+
+      // Collision Detection: Player with Asteroids
       if (!gameOverRef.current) {
         const playerPolygon = currentPlayer.getPolygon();
         asteroidsRef.current.forEach(asteroid => {
           if (checkPolygonCollision(playerPolygon, asteroid.getPolygon())) {
-            debrisRef.current = debrisRef.current.concat(currentPlayer.destroy());
-            gameOverRef.current = true;
-            setIsGameOver(true);
+            if (activePowerupsRef.current.has('invulnerability')) {
+              const tempV = { ...currentPlayer.velocity };
+              currentPlayer.velocity = asteroid.velocity;
+              asteroid.velocity = tempV;
+            } else {
+              debrisRef.current = debrisRef.current.concat(currentPlayer.destroy());
+              gameOverRef.current = true;
+              setIsGameOver(true);
+            }
           }
         });
       }
 
-      // Collision Detection: Player with UFO
-      if (!gameOverRef.current && ufoRef.current) {
+      // Collision Detection: Player with UFOs
+      if (!gameOverRef.current) {
         const playerPolygon = currentPlayer.getPolygon();
-        const ufoPolygon = ufoRef.current.getPolygon();
-        if (checkPolygonCollision(playerPolygon, ufoPolygon)) {
-          debrisRef.current = debrisRef.current.concat(currentPlayer.destroy());
-          gameOverRef.current = true;
-          setIsGameOver(true);
-          ufoRef.current.destroy(); // Also destroy the UFO
-        }
+        allUfos.forEach(ufo => {
+          const ufoPolygon = ufo.getPolygon();
+          if (checkPolygonCollision(playerPolygon, ufoPolygon)) {
+            if (activePowerupsRef.current.has('invulnerability')) {
+              const tempV = { ...currentPlayer.velocity };
+              currentPlayer.velocity = ufo.velocity;
+              ufo.velocity = tempV;
+            } else {
+              debrisRef.current = debrisRef.current.concat(currentPlayer.destroy());
+              gameOverRef.current = true;
+              setIsGameOver(true);
+              ufo.destroy();
+            }
+          }
+        });
       }
 
       // Handle asteroid splitting
       const newAsteroids = [];
       asteroidsRef.current.forEach(asteroid => {
-        // Check if a large asteroid is destroyed
         if (asteroid.delete && asteroid.radius >= 50) {
-          // Split into two smaller asteroids
           newAsteroids.push(new Asteroid({
             position: { ...asteroid.position },
             size: asteroid.radius / 2
@@ -314,7 +472,9 @@ const Game = () => {
       bulletsRef.current = bulletsRef.current.filter(b => !b.delete);
       ufoBulletsRef.current = ufoBulletsRef.current.filter(b => !b.delete);
       debrisRef.current = debrisRef.current.filter(d => !d.delete);
+      powerupsRef.current = powerupsRef.current.filter(p => !p.delete);
       asteroidsRef.current = asteroidsRef.current.filter(a => !a.delete).concat(newAsteroids);
+      ufosRef.current = ufosRef.current.filter(u => !u.delete);
 
       // Check for next wave (only if game not over)
       if (!gameOverRef.current && asteroidsRef.current.length === 0) {
@@ -330,7 +490,7 @@ const Game = () => {
     return () => {
       window.cancelAnimationFrame(animationFrameId);
     };
-  }, [resetKey]); // Add resetKey to dependency array
+  }, [resetKey]);
 
   return (
     <>
