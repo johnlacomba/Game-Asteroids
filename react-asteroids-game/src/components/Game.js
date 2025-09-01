@@ -7,7 +7,7 @@ import Powerup from './Powerup';
 import { handleInput } from '../core/inputController';
 import { checkPolygonCollision, checkCirclePolygonCollision } from '../core/collision';
 
-const Game = () => {
+const Game = ({ onBackToTitle }) => {
   const canvasRef = useRef(null);
   const bulletsRef = useRef([]);
   const ufoBulletsRef = useRef([]);
@@ -15,7 +15,7 @@ const Game = () => {
   const debrisRef = useRef([]);
   const powerupsRef = useRef([]);
   const ufoRef = useRef(null);
-  const ufosRef = useRef([]); // For multiple UFOs
+  const ufosRef = useRef([]);
   const playerRef = useRef(null);
   const starsRef = useRef([]);
   const shootCooldownRef = useRef(0);
@@ -30,14 +30,14 @@ const Game = () => {
   const totalPowerupsCollectedRef = useRef(0);
   const ufoSwarmFlashTimerRef = useRef(0);
   const UFO_SPAWN_TIME = 30 * 60;
-  const UFO_WAVE_INTERVAL = 15 * 60; // 15 seconds between waves
+  const UFO_WAVE_INTERVAL = 15 * 60;
   const BASE_SHOOT_COOLDOWN = 15;
   const WORLD_WIDTH = 3000;
   const WORLD_HEIGHT = 2000;
   const POWERUP_TYPES = ['rapidFire', 'invulnerability', 'spreadShot', 'homingShot', 'speedUp', 'powerShot', 'bouncingBullets'];
-  const POWERUP_THRESHOLD = 5; // Trigger UFO waves after 5 powerups
-  const UFO_SWARM_SIZE = 36; // Three dozen UFOs per wave
-  const UFO_FLASH_DURATION = 120; // 2 seconds at 60fps
+  const POWERUP_THRESHOLD = 5;
+  const UFO_SWARM_SIZE = 36;
+  const UFO_FLASH_DURATION = 120;
 
   useEffect(() => {
     const handleRestart = (e) => {
@@ -65,6 +65,11 @@ const Game = () => {
         // Trigger a full re-initialization of the game
         setIsGameOver(false);
         setResetKey(prev => prev + 1);
+      } else if (e.key === 'Escape') {
+        // Return to title screen
+        if (onBackToTitle) {
+          onBackToTitle();
+        }
       }
     };
 
@@ -75,7 +80,7 @@ const Game = () => {
     return () => {
       window.removeEventListener('keydown', handleRestart);
     };
-  }, [isGameOver]);
+  }, [isGameOver, onBackToTitle]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -496,9 +501,29 @@ const Game = () => {
   return (
     <>
       {isGameOver && (
-        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: 'white', fontSize: '48px', textAlign: 'center' }}>
+        <div style={{ 
+          position: 'absolute', 
+          top: '50%', 
+          left: '50%', 
+          transform: 'translate(-50%, -50%)', 
+          color: 'white', 
+          fontSize: '48px', 
+          textAlign: 'center',
+          zIndex: 1000,
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          padding: '40px',
+          borderRadius: '10px'
+        }}>
           GAME OVER
-          <p style={{ fontSize: '24px', marginTop: '20px' }}>Press Enter to Restart</p>
+          <p style={{ fontSize: '24px', marginTop: '20px' }}>
+            Press <strong>Enter</strong> to Restart
+          </p>
+          <p style={{ fontSize: '20px', marginTop: '10px', color: '#AAAAAA' }}>
+            Press <strong>Escape</strong> to return to Title Screen
+          </p>
+          <p style={{ fontSize: '18px', marginTop: '20px', color: '#00FFFF' }}>
+            Final Score: {scoreRef.current}
+          </p>
         </div>
       )}
       <canvas ref={canvasRef} />
