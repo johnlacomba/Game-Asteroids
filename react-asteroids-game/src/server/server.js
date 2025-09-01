@@ -90,12 +90,12 @@ const createAsteroid = (options = {}) => {
   };
 };
 
-// Create a powerup at the position where an asteroid was broken - matches Powerup.js constructor
+// Create a powerup at the position where an asteroid was broken
 const createPowerup = (position) => {
   // Random powerup type
   const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
   
-  // Random velocity vector - exactly like Powerup.js constructor
+  // Random velocity vector
   const speed = 1 + Math.random() * 2;
   const angle = Math.random() * Math.PI * 2;
   
@@ -248,6 +248,60 @@ const checkAsteroidBoundaryCollision = (asteroid) => {
   return { collisionWall, collisionPoint };
 };
 
+// Generate polygon points for a powerup
+const getPowerupPolygon = (powerup) => {
+  // Create an octagon shape for powerups
+  const points = [];
+  const segments = 8;
+  const angleStep = (Math.PI * 2) / segments;
+  const radius = powerup.radius;
+  
+  for (let i = 0; i < segments; i++) {
+    const angle = i * angleStep;
+    points.push({
+      x: powerup.position.x + Math.cos(angle) * radius,
+      y: powerup.position.y + Math.sin(angle) * radius
+    });
+  }
+  
+  return points;
+};
+
+// Check powerup-boundary collision
+const checkPowerupBoundaryCollision = (powerup) => {
+  const powerupPolygon = getPowerupPolygon(powerup);
+  
+  let collisionWall = null;
+  let closestDistance = Infinity;
+  let collisionPoint = null;
+
+  // Check each edge of the powerup polygon against each boundary wall
+  for (let i = 0; i < powerupPolygon.length; i++) {
+    const start = powerupPolygon[i];
+    const end = powerupPolygon[(i + 1) % powerupPolygon.length];
+    const powerupEdge = { start, end };
+
+    for (const wall of BOUNDARY_WALLS) {
+      const intersection = checkLineIntersection(powerupEdge, wall);
+      
+      if (intersection) {
+        // Calculate distance from powerup center to intersection
+        const dx = powerup.position.x - intersection.x;
+        const dy = powerup.position.y - intersection.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          collisionWall = wall;
+          collisionPoint = intersection;
+        }
+      }
+    }
+  }
+
+  return { collisionWall, collisionPoint };
+};
+
 const updateGameState = () => {
   // Update asteroids
   gameState.asteroids.forEach(asteroid => {
@@ -307,26 +361,55 @@ const updateGameState = () => {
     if (asteroid.position.y > WORLD_HEIGHT + asteroid.radius) asteroid.position.y = 10;
   });
 
-  // Update powerups - matches Powerup.update() method
+  // Update powerups with proper collision detection
   gameState.powerups.forEach(powerup => {
-    // Update position based on velocity
-    powerup.position.x += powerup.velocity.x;
-    powerup.position.y += powerup.velocity.y;
+    // Calculate new position
+    const newPosition = {
+      x: powerup.position.x + powerup.velocity.x,
+      y: powerup.position.y + powerup.velocity.y
+    };
     
-    // Bounce off boundaries
-    if (powerup.position.x <= 0 || powerup.position.x >= WORLD_WIDTH) {
-      powerup.velocity.x *= -0.8;
-      powerup.position.x = Math.max(0, Math.min(WORLD_WIDTH, powerup.position.x));
+    // Check for boundary collisions using polygonal detection
+    const tempPowerup = {
+      ...powerup,
+      position: newPosition
+    };
+    
+    const { collisionWall, collisionPoint } = checkPowerupBoundaryCollision(tempPowerup);
+    
+    if (collisionWall) {
+      // Calculate wall normal (perpendicular to wall)
+      const wallVector = {
+        x: collisionWall.end.x - collisionWall.start.x,
+        y: collisionWall.end.y - collisionWall.start.y
+      };
+      
+      const wallLength = Math.sqrt(wallVector.x * wallVector.x + wallVector.y * wallVector.y);
+      
+      // Normalize the wall vector
+      wallVector.x /= wallLength;
+      wallVector.y /= wallLength;
+      
+      // Wall normal is perpendicular to wall
+      const wallNormal = {
+        x: -wallVector.y, // Perpendicular
+        y: wallVector.x   // Perpendicular
+      };
+      
+      // Reflect velocity with slight energy loss (95% of original energy)
+      // Powerups should bounce more elastically than asteroids
+      const reflection = calculateReflection(powerup.velocity, wallNormal);
+      powerup.velocity.x = reflection.x * 0.95;
+      powerup.velocity.y = reflection.y * 0.95;
+      
+      // Adjust position to prevent sticking to wall
+      const pushDistance = Math.min(3, powerup.radius * 0.2);
+      powerup.position.x += wallNormal.x * pushDistance;
+      powerup.position.y += wallNormal.y * pushDistance;
+    } else {
+      // No collision, update position normally
+      powerup.position = newPosition;
     }
-    
-    if (powerup.position.y <= 0 || powerup.position.y >= WORLD_HEIGHT) {
-      powerup.velocity.y *= -0.8;
-      powerup.position.y = Math.max(0, Math.min(WORLD_HEIGHT, powerup.position.y));
-    }
-    
-    // Apply friction
-    powerup.velocity.x *= 0.99;
-    powerup.velocity.y *= 0.99;
     
     // Decrease lifetime
     powerup.lifeTimer--;
@@ -587,20 +670,22 @@ const updateGameState = () => {
     }
   }
 
-  // Check player-powerup collisions
+  // Check player-powerup collisions using polygonal detection
   gameState.players.forEach(player => {
     if (player.delete) return;
     
+    const playerPolygon = getShipPolygon({
+      x: player.position.x,
+      y: player.position.y,
+      rotation: player.rotation
+    });
+    
     for (let i = gameState.powerups.length - 1; i >= 0; i--) {
       const powerup = gameState.powerups[i];
+      const powerupPolygon = getPowerupPolygon(powerup);
       
-      const distance = Math.sqrt(
-        Math.pow(player.position.x - powerup.position.x, 2) +
-        Math.pow(player.position.y - powerup.position.y, 2)
-      );
-      
-      // If player touches powerup (within 20 pixels)
-      if (distance < 20) {
+      // Check if player polygon and powerup polygon intersect
+      if (checkPolygonCollision(playerPolygon, powerupPolygon)) {
         // Apply powerup effect
         applyPowerup(player, powerup.type);
         
