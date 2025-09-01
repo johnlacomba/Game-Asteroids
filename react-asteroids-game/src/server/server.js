@@ -160,16 +160,151 @@ const initializeAsteroids = () => {
   }
 };
 
+// Add boundary wall definitions after your game constants section
+const BOUNDARY_WALLS = [
+  // Top wall: (x1,y1) to (x2,y2)
+  { start: { x: 0, y: 0 }, end: { x: WORLD_WIDTH, y: 0 } },
+  // Right wall
+  { start: { x: WORLD_WIDTH, y: 0 }, end: { x: WORLD_WIDTH, y: WORLD_HEIGHT } },
+  // Bottom wall
+  { start: { x: WORLD_WIDTH, y: WORLD_HEIGHT }, end: { x: 0, y: WORLD_HEIGHT } },
+  // Left wall
+  { start: { x: 0, y: WORLD_HEIGHT }, end: { x: 0, y: 0 } }
+];
+
+// Add a function to check for line segment intersection
+const checkLineIntersection = (line1, line2) => {
+  const x1 = line1.start.x;
+  const y1 = line1.start.y;
+  const x2 = line1.end.x;
+  const y2 = line1.end.y;
+  const x3 = line2.start.x;
+  const y3 = line2.start.y;
+  const x4 = line2.end.x;
+  const y4 = line2.end.y;
+
+  const denominator = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+  if (denominator === 0) return null;
+
+  const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denominator;
+  const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denominator;
+
+  if (ua < 0 || ua > 1 || ub < 0 || ub > 1) return null;
+
+  const x = x1 + ua * (x2 - x1);
+  const y = y1 + ua * (y2 - y1);
+
+  return { x, y };
+};
+
+// Add a function to calculate reflection vector
+const calculateReflection = (velocity, wallNormal) => {
+  const dotProduct = velocity.x * wallNormal.x + velocity.y * wallNormal.y;
+  
+  return {
+    x: velocity.x - 2 * dotProduct * wallNormal.x,
+    y: velocity.y - 2 * dotProduct * wallNormal.y
+  };
+};
+
+// Add a function to check asteroid-boundary collision
+const checkAsteroidBoundaryCollision = (asteroid) => {
+  const asteroidPolygon = getAsteroidPolygon({
+    x: asteroid.position.x,
+    y: asteroid.position.y,
+    size: asteroid.radius,
+    rotation: asteroid.rotation,
+    shape: asteroid.shape
+  });
+  
+  let collisionWall = null;
+  let closestDistance = Infinity;
+  let collisionPoint = null;
+
+  // Check each edge of the asteroid against each boundary wall
+  for (let i = 0; i < asteroidPolygon.length; i++) {
+    const start = asteroidPolygon[i];
+    const end = asteroidPolygon[(i + 1) % asteroidPolygon.length];
+    const asteroidEdge = { start, end };
+
+    for (const wall of BOUNDARY_WALLS) {
+      const intersection = checkLineIntersection(asteroidEdge, wall);
+      
+      if (intersection) {
+        // Calculate distance from asteroid center to intersection
+        const dx = asteroid.position.x - intersection.x;
+        const dy = asteroid.position.y - intersection.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          collisionWall = wall;
+          collisionPoint = intersection;
+        }
+      }
+    }
+  }
+
+  return { collisionWall, collisionPoint };
+};
+
 const updateGameState = () => {
   // Update asteroids
   gameState.asteroids.forEach(asteroid => {
-    asteroid.position.x += asteroid.velocity.x;
-    asteroid.position.y += asteroid.velocity.y;
+    // Calculate new position
+    const newPosition = {
+      x: asteroid.position.x + asteroid.velocity.x,
+      y: asteroid.position.y + asteroid.velocity.y
+    };
+    
+    // Update rotation
     asteroid.rotation += asteroid.rotationSpeed;
-    if (asteroid.position.x < -asteroid.radius) asteroid.position.x = WORLD_WIDTH + asteroid.radius;
-    if (asteroid.position.x > WORLD_WIDTH + asteroid.radius) asteroid.position.x = -asteroid.radius;
-    if (asteroid.position.y < -asteroid.radius) asteroid.position.y = WORLD_HEIGHT + asteroid.radius;
-    if (asteroid.position.y > WORLD_HEIGHT + asteroid.radius) asteroid.position.y = -asteroid.radius;
+    
+    // Check for boundary collisions using polygonal detection
+    const { collisionWall, collisionPoint } = checkAsteroidBoundaryCollision({
+      ...asteroid,
+      position: newPosition
+    });
+    
+    if (collisionWall) {
+      // Calculate wall normal (perpendicular to wall)
+      const wallVector = {
+        x: collisionWall.end.x - collisionWall.start.x,
+        y: collisionWall.end.y - collisionWall.start.y
+      };
+      
+      const wallLength = Math.sqrt(wallVector.x * wallVector.x + wallVector.y * wallVector.y);
+      
+      // Normalize the wall vector
+      wallVector.x /= wallLength;
+      wallVector.y /= wallLength;
+      
+      // Wall normal is perpendicular to wall
+      const wallNormal = {
+        x: -wallVector.y, // Perpendicular
+        y: wallVector.x   // Perpendicular
+      };
+      
+      // Reflect velocity with some energy loss (80% of original energy)
+      const reflection = calculateReflection(asteroid.velocity, wallNormal);
+      asteroid.velocity.x = reflection.x * 0.8;
+      asteroid.velocity.y = reflection.y * 0.8;
+      
+      // Adjust position to prevent sticking to wall
+      const pushDistance = Math.min(5, asteroid.radius * 0.2);
+      asteroid.position.x += wallNormal.x * pushDistance;
+      asteroid.position.y += wallNormal.y * pushDistance;
+    } else {
+      // No collision, update position normally
+      asteroid.position = newPosition;
+    }
+
+    // Safety check - if asteroid somehow escapes the boundaries, wrap it around
+    // This is a fallback and should rarely be needed
+    if (asteroid.position.x < -asteroid.radius) asteroid.position.x = WORLD_WIDTH - 10;
+    if (asteroid.position.x > WORLD_WIDTH + asteroid.radius) asteroid.position.x = 10;
+    if (asteroid.position.y < -asteroid.radius) asteroid.position.y = WORLD_HEIGHT - 10;
+    if (asteroid.position.y > WORLD_HEIGHT + asteroid.radius) asteroid.position.y = 10;
   });
 
   // Update powerups - matches Powerup.update() method
