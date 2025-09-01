@@ -11,10 +11,9 @@ const MultiplayerGame = ({ onBackToTitle }) => {
   const [connected, setConnected] = useState(false);
   const [playerCount, setPlayerCount] = useState(0);
   const [showUfoWarning, setShowUfoWarning] = useState(false);
-  const lastInputRef = useRef({ keys: {}, rotation: 0 });
   const animationFrameRef = useRef(null);
   const rotationRef = useRef(0);
-
+  
   // Cache for asteroid instances
   const asteroidInstancesRef = useRef(new Map());
 
@@ -120,7 +119,7 @@ const MultiplayerGame = ({ onBackToTitle }) => {
       return;
     }
 
-    // Handle input
+    // Handle input EVERY FRAME - same as offline mode
     const keys = handleInput();
     
     if (keys.a) {
@@ -132,22 +131,19 @@ const MultiplayerGame = ({ onBackToTitle }) => {
 
     rotationRef.current = ((rotationRef.current % 360) + 360) % 360;
 
+    // Always send input every frame, don't check if it changed
     const currentInput = {
       keys: {
-        w: keys.w,
-        s: keys.s,
-        a: keys.a,
-        d: keys.d,
-        space: keys[' ']
+        w: keys.w || false,
+        s: keys.s || false,
+        a: keys.a || false,
+        d: keys.d || false,
+        space: keys[' '] || false
       },
       rotation: rotationRef.current
     };
-
-    const inputChanged = JSON.stringify(currentInput) !== JSON.stringify(lastInputRef.current);
-    if (inputChanged) {
-      socketRef.current.emit('playerInput', currentInput);
-      lastInputRef.current = { ...currentInput };
-    }
+    
+    socketRef.current.emit('playerInput', currentInput);
 
     // Clear canvas
     context.fillStyle = 'black';

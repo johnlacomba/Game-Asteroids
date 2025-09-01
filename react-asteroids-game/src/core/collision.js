@@ -1,98 +1,91 @@
-// Helper function to project a polygon onto an axis and return a min/max range.
-const projectPolygon = (axis, polygon) => {
-  let min = Infinity;
-  let max = -Infinity;
-  for (const p of polygon) {
-    const dotProduct = p.x * axis.x + p.y * axis.y;
-    min = Math.min(min, dotProduct);
-    max = Math.max(max, dotProduct);
-  }
-  return { min, max };
-};
+/**
+ * Core collision detection utilities
+ */
 
-// Helper function to check if two 1D ranges overlap.
-const overlap = (p1, p2) => {
-  return p1.max >= p2.min && p2.max >= p1.min;
-};
-
-// Main SAT collision detection function
-export const checkPolygonCollision = (poly1, poly2) => {
-  const getAxes = (polygon) => {
-    const axes = [];
-    for (let i = 0; i < polygon.length; i++) {
-      const p1 = polygon[i];
-      const p2 = polygon[i + 1 === polygon.length ? 0 : i + 1];
-      const edge = { x: p1.x - p2.x, y: p1.y - p2.y };
-      // Get the perpendicular vector (the normal)
-      const normal = { x: -edge.y, y: edge.x };
-      axes.push(normal);
-    }
-    return axes;
-  };
-
-  const axes1 = getAxes(poly1);
-  const axes2 = getAxes(poly2);
-
-  // Loop over all axes
-  for (const axis of [...axes1, ...axes2]) {
-    const p1 = projectPolygon(axis, poly1);
-    const p2 = projectPolygon(axis, poly2);
-    // If there is no overlap on any axis, there is no collision
-    if (!overlap(p1, p2)) {
-      return false;
-    }
-  }
-
-  // If all axes have overlap, the polygons are colliding
-  return true;
-};
-
-// Helper for point-in-polygon test using ray-casting
+// Helper function: Check if a point is inside a polygon
 const pointInPolygon = (point, polygon) => {
   let isInside = false;
   for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
     const xi = polygon[i].x, yi = polygon[i].y;
     const xj = polygon[j].x, yj = polygon[j].y;
-
     const intersect = ((yi > point.y) !== (yj > point.y))
         && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
-    if (intersect) {
-      isInside = !isInside;
-    }
+    if (intersect) isInside = !isInside;
   }
   return isInside;
 };
 
-// Circle-to-Polygon collision for bullets vs asteroids
+// Ship polygon generator - moved to top to ensure it's defined first
+export const getShipPolygon = (ship) => {
+  const angle = (ship.rotation - 90) * (Math.PI / 180);
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const points = [
+    { x: 0, y: -10 },
+    { x: -8, y: 10 },
+    { x: 0, y: 5 },
+    { x: 8, y: 10 }
+  ];
+  return points.map(p => ({
+    x: p.x * cos - p.y * sin + ship.x,
+    y: p.x * sin + p.y * cos + ship.y,
+  }));
+};
+
+// Asteroid polygon generator
+export const getAsteroidPolygon = (asteroid) => {
+  const points = [];
+  const angleStep = (Math.PI * 2) / asteroid.shape.length;
+  for (let i = 0; i < asteroid.shape.length; i++) {
+    const angle = i * angleStep + asteroid.rotation * (Math.PI / 180);
+    const length = asteroid.size * asteroid.shape[i];
+    points.push({
+      x: asteroid.x + Math.cos(angle) * length,
+      y: asteroid.y + Math.sin(angle) * length,
+    });
+  }
+  return points;
+};
+
+// Check if two polygons are colliding
+export const checkPolygonCollision = (poly1, poly2) => {
+  for (let i = 0; i < poly1.length; i++) {
+    if (pointInPolygon(poly1[i], poly2)) return true;
+  }
+  for (let i = 0; i < poly2.length; i++) {
+    if (pointInPolygon(poly2[i], poly1)) return true;
+  }
+  return false;
+};
+
+// Check if a circle is colliding with a polygon
 export const checkCirclePolygonCollision = (circle, polygon) => {
-  // 1. Check if the circle's center is inside the polygon.
-  if (pointInPolygon(circle.position, polygon)) {
+  if (pointInPolygon({ x: circle.x, y: circle.y }, polygon)) {
     return true;
   }
-
-  // 2. If not, check if any edge of the polygon is close to the circle.
   for (let i = 0; i < polygon.length; i++) {
-    const p1 = polygon[i];
-    const p2 = polygon[i + 1 === polygon.length ? 0 : i + 1];
-
-    const dx = p2.x - p1.x;
-    const dy = p2.y - p1.y;
-    const lenSq = dx * dx + dy * dy;
-
-    // Find the projection of the circle's center onto the line segment
-    let t = ((circle.position.x - p1.x) * dx + (circle.position.y - p1.y) * dy) / lenSq;
-    t = Math.max(0, Math.min(1, t)); // Clamp t to the segment [0, 1]
-
-    const closestX = p1.x + t * dx;
-    const closestY = p1.y + t * dy;
-
-    // Check the distance from the closest point to the circle's center
-    const distSq = (circle.position.x - closestX) ** 2 + (circle.position.y - closestY) ** 2;
-
-    if (distSq < circle.radius * circle.radius) {
-      return true; // Collision detected
+    const start = polygon[i];
+    const end = polygon[(i + 1) % polygon.length];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const lengthSq = dx * dx + dy * dy;
+    const t = Math.max(0, Math.min(1, ((circle.x - start.x) * dx + (circle.y - start.y) * dy) / lengthSq));
+    const closestX = start.x + t * dx;
+    const closestY = start.y + t * dy;
+    const distSq = (circle.x - closestX) ** 2 + (circle.y - closestY) ** 2;
+    if (distSq < circle.radius ** 2) {
+      return true;
     }
   }
-
-  return false; // No collision
+  return false;
 };
+
+// Add CommonJS exports for server compatibility
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    checkPolygonCollision,
+    checkCirclePolygonCollision,
+    getShipPolygon,
+    getAsteroidPolygon
+  };
+}
