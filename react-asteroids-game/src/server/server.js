@@ -343,6 +343,19 @@ const updateGameState = () => {
         ? 1 + (player.activePowerups.speedUp.stack * 0.3) 
         : 1;
 
+      // Add max speed limit - lower than in single player
+      const maxSpeed = 4; // Set a reasonable max speed
+      const currentSpeed = Math.sqrt(
+        player.velocity.x * player.velocity.x + 
+        player.velocity.y * player.velocity.y
+      );
+      
+      // If exceeding max speed, normalize velocity vector to max speed
+      if (currentSpeed > maxSpeed) {
+        player.velocity.x = (player.velocity.x / currentSpeed) * maxSpeed;
+        player.velocity.y = (player.velocity.y / currentSpeed) * maxSpeed;
+      }
+
       const newPosition = { 
         x: player.position.x + player.velocity.x * speedMultiplier, 
         y: player.position.y + player.velocity.y * speedMultiplier 
@@ -679,13 +692,15 @@ io.on('connection', (socket) => {
       if (input.rotation !== undefined) player.rotation = input.rotation;
       if (input.keys.w) {
         const radians = (player.rotation - 90) * Math.PI / 180;
-        player.velocity.x += Math.cos(radians) * 0.3;
-        player.velocity.y += Math.sin(radians) * 0.3;
+        // Reduce acceleration by half (from 0.3 to 0.15)
+        player.velocity.x += Math.cos(radians) * 0.15;
+        player.velocity.y += Math.sin(radians) * 0.15;
       }
       if (input.keys.s) {
         const radians = (player.rotation - 90) * Math.PI / 180;
-        player.velocity.x -= Math.cos(radians) * 0.15;
-        player.velocity.y -= Math.sin(radians) * 0.15;
+        // Also reduce reverse thrust by half (from 0.15 to 0.075)
+        player.velocity.x -= Math.cos(radians) * 0.075;
+        player.velocity.y -= Math.sin(radians) * 0.075;
       }
       // Track spacebar state but don't create bullets here
       player.spacePressed = input.keys.space;
