@@ -302,7 +302,8 @@ const updateGameState = () => {
               radius: player.activePowerups && player.activePowerups.powerShot ? 4 : 2,
               playerId: player.id,
               lifeTime: 0,
-              bouncing: player.activePowerups && player.activePowerups.bouncingBullets !== undefined
+              bouncing: player.activePowerups && player.activePowerups.bouncingBullets !== undefined,
+              homing: player.activePowerups && player.activePowerups.homingShot !== undefined
             });
           }
         } else {
@@ -317,7 +318,8 @@ const updateGameState = () => {
             radius: player.activePowerups && player.activePowerups.powerShot ? 4 : 2,
             playerId: player.id,
             lifeTime: 0,
-            bouncing: player.activePowerups && player.activePowerups.bouncingBullets !== undefined
+            bouncing: player.activePowerups && player.activePowerups.bouncingBullets !== undefined,
+            homing: player.activePowerups && player.activePowerups.homingShot !== undefined
           });
         }
         
@@ -333,46 +335,46 @@ const updateGameState = () => {
     }
   });
 
-  // Handle homing bullets - matches offline mode
+  // Handle homing bullets - EXACTLY matching Bullet.js from offline mode
   gameState.bullets.forEach(bullet => {
-    // Check if bullet has homing property and belongs to a player
-    if (bullet.homing && bullet.playerId) {
-      const player = gameState.players.find(p => p.id === bullet.playerId);
+    if (bullet.homing) {
+      // Find the nearest asteroid - exactly matching offline logic
+      let closestAsteroid = null;
+      let closestDistance = Infinity;
       
-      // Only players with homingShot powerup have homing bullets
-      if (player && player.activePowerups && player.activePowerups.homingShot) {
-        // Find nearest asteroid to target
-        let closestAsteroid = null;
-        let closestDistance = Infinity;
+      gameState.asteroids.forEach(asteroid => {
+        const dx = asteroid.position.x - bullet.position.x;
+        const dy = asteroid.position.y - bullet.position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
         
-        gameState.asteroids.forEach(asteroid => {
-          const dx = asteroid.position.x - bullet.position.x;
-          const dy = asteroid.position.y - bullet.position.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          
-          if (distance < closestDistance) {
-            closestDistance = distance;
-            closestAsteroid = asteroid;
-          }
-        });
-        
-        // If there's an asteroid in range, adjust bullet trajectory
-        if (closestAsteroid && closestDistance < 300) {
-          const homingStrength = 0.2 + (player.activePowerups.homingShot.stack * 0.1);
-          const dx = closestAsteroid.position.x - bullet.position.x;
-          const dy = closestAsteroid.position.y - bullet.position.y;
-          const angle = Math.atan2(dy, dx);
-          
-          // Gradually adjust velocity toward target
-          bullet.velocity.x += Math.cos(angle) * homingStrength;
-          bullet.velocity.y += Math.sin(angle) * homingStrength;
-          
-          // Normalize velocity to maintain speed
-          const speed = 8; // Original bullet speed
-          const currentSpeed = Math.sqrt(bullet.velocity.x * bullet.velocity.x + bullet.velocity.y * bullet.velocity.y);
-          bullet.velocity.x = (bullet.velocity.x / currentSpeed) * speed;
-          bullet.velocity.y = (bullet.velocity.y / currentSpeed) * speed;
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestAsteroid = asteroid;
         }
+      });
+      
+      // If there's an asteroid within range, adjust trajectory
+      if (closestAsteroid && closestDistance < 500) { // 500px is the homing range in Bullet.js
+        const dx = closestAsteroid.position.x - bullet.position.x;
+        const dy = closestAsteroid.position.y - bullet.position.y;
+        const angle = Math.atan2(dy, dx);
+        
+        // Get the player who fired this bullet
+        const player = gameState.players.find(p => p.id === bullet.playerId);
+        
+        // Match the exact Bullet.js homing strength calculation
+        // In offline mode it's 0.2 base + 0.1 per stack level after the first
+        const stackLevel = player?.activePowerups?.homingShot?.stack || 1;
+        const homingStrength = 0.2 + ((stackLevel - 1) * 0.1);
+        
+        bullet.velocity.x += Math.cos(angle) * homingStrength;
+        bullet.velocity.y += Math.sin(angle) * homingStrength;
+        
+        // Normalize velocity to maintain constant speed (exactly as in Bullet.js)
+        const speed = 8;
+        const currentSpeed = Math.sqrt(bullet.velocity.x * bullet.velocity.x + bullet.velocity.y * bullet.velocity.y);
+        bullet.velocity.x = (bullet.velocity.x / currentSpeed) * speed;
+        bullet.velocity.y = (bullet.velocity.y / currentSpeed) * speed;
       }
     }
   });
