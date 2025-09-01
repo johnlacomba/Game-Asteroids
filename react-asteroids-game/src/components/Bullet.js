@@ -6,6 +6,7 @@ export default class Bullet {
     this.owner = args.owner || 'player';
     this.homing = args.homing || false;
     this.powerShot = args.powerShot || false;
+    this.bouncing = args.bouncing || false;
 
     // Corrected velocity calculation.
     const speed = 5;
@@ -18,6 +19,8 @@ export default class Bullet {
     this.radius = this.powerShot ? 4 : 2; // Double size for power shot
     this.damage = this.powerShot ? 2 : 1; // Double damage for power shot
     this.delete = false; // Flag for removal
+    this.bounceCount = 0; // Track number of bounces
+    this.maxBounces = 5; // Limit bounces to prevent infinite bullets
   }
 
   update(width, height, targets = []) {
@@ -70,13 +73,41 @@ export default class Bullet {
     this.position.x += this.velocity.x;
     this.position.y += this.velocity.y;
 
-    // Check if bullet is off-screen
-    if (
-      this.position.x < 0 ||
-      this.position.x > width ||
-      this.position.y < 0 ||
-      this.position.y > height
-    ) {
+    // Check if bullet hits world boundaries
+    if (this.bouncing && this.owner === 'player' && this.bounceCount < this.maxBounces) {
+      let bounced = false;
+      
+      // Check horizontal boundaries
+      if (this.position.x <= 0 || this.position.x >= width) {
+        this.velocity.x *= -1;
+        this.position.x = Math.max(0, Math.min(width, this.position.x));
+        bounced = true;
+      }
+      
+      // Check vertical boundaries
+      if (this.position.y <= 0 || this.position.y >= height) {
+        this.velocity.y *= -1;
+        this.position.y = Math.max(0, Math.min(height, this.position.y));
+        bounced = true;
+      }
+      
+      if (bounced) {
+        this.bounceCount++;
+      }
+    } else {
+      // Normal bullet behavior - delete when off-screen
+      if (
+        this.position.x < 0 ||
+        this.position.x > width ||
+        this.position.y < 0 ||
+        this.position.y > height
+      ) {
+        this.delete = true;
+      }
+    }
+
+    // Delete bouncing bullets after max bounces
+    if (this.bouncing && this.bounceCount >= this.maxBounces) {
       this.delete = true;
     }
   }
@@ -88,8 +119,10 @@ export default class Bullet {
     // Different colors for different bullet types
     if (this.owner === 'ufo') {
       context.fillStyle = '#FF4444'; // Red for UFO bullets
+    } else if (this.bouncing) {
+      context.fillStyle = '#00FFFF'; // Cyan for bouncing bullets
     } else {
-      context.fillStyle = '#FFFFFF'; // White for both power shot and normal player bullets
+      context.fillStyle = '#FFFFFF'; // White for normal player bullets
     }
     
     context.beginPath();

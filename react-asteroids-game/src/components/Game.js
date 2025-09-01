@@ -34,7 +34,7 @@ const Game = () => {
   const BASE_SHOOT_COOLDOWN = 15;
   const WORLD_WIDTH = 3000;
   const WORLD_HEIGHT = 2000;
-  const POWERUP_TYPES = ['rapidFire', 'invulnerability', 'spreadShot', 'homingShot', 'speedUp', 'powerShot'];
+  const POWERUP_TYPES = ['rapidFire', 'invulnerability', 'spreadShot', 'homingShot', 'speedUp', 'powerShot', 'bouncingBullets'];
   const POWERUP_THRESHOLD = 5; // Trigger UFO waves after 5 powerups
   const UFO_SWARM_SIZE = 36; // Three dozen UFOs per wave
   const UFO_FLASH_DURATION = 120; // 2 seconds at 60fps
@@ -102,7 +102,7 @@ const Game = () => {
     playerRef.current = player;
 
     const spawnPowerup = (position) => {
-      if (Math.random() < 0.2) {
+      if (Math.random() < 0.15) { // Changed from 0.2 (20%) to 0.15 (15%)
         const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
         powerupsRef.current.push(new Powerup({ position, type }));
       }
@@ -116,6 +116,7 @@ const Game = () => {
         homingShot: 30 * 60,
         speedUp: 60 * 60,
         powerShot: 30 * 60,
+        bouncingBullets: 30 * 60,
       };
       
       const existing = activePowerupsRef.current.get(type);

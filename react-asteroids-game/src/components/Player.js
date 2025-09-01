@@ -47,6 +47,7 @@ export default class Player {
     const bullets = [];
     const isHoming = activePowerups.has('homingShot');
     const isPowerShot = activePowerups.has('powerShot');
+    const isBouncing = activePowerups.has('bouncingBullets');
 
     const createBullet = (rotationAngle) => {
       // Each bullet needs a DEEP COPY of the position object.
@@ -59,6 +60,7 @@ export default class Player {
         },
         homing: isHoming,
         powerShot: isPowerShot,
+        bouncing: isBouncing,
         rotation: rotationAngle,
       };
       return new Bullet(bulletInfo);
@@ -97,7 +99,7 @@ export default class Player {
 
   update(keys, worldWidth, worldHeight, activePowerups) {
     const speedUpPowerup = activePowerups.get('speedUp');
-    const speedMultiplier = speedUpPowerup ? 2 ** speedUpPowerup.stack : 1;
+    const speedMultiplier = speedUpPowerup ? 1.5 ** speedUpPowerup.stack : 1; // Changed from 2 to 1.5
     const currentSpeed = this.speed * speedMultiplier;
 
     if (keys.a) {
