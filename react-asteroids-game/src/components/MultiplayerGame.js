@@ -495,7 +495,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
         context.textAlign = 'left';
         // Draw remove button for bots
         if (p.isBot) {
-          const btnX = (canvas.width+boxWidth)/2 - 60; // near score but left
+          const btnX = (canvas.width+boxWidth)/2 - 80; // shifted further left to avoid score overlap
           const btnY = y - 12; // align with text line
             const w = 14; const h = 14;
           context.strokeStyle = '#FF5555';

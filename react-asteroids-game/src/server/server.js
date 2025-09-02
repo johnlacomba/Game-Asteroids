@@ -137,7 +137,7 @@ function updateLeaderForPlayer(player) {
 function createBotPlayer() {
   const id = `${BOT_PREFIX}${nextBotId++}`;
   // Reuse spawn logic near center with some randomization
-  const position = { x: WORLD_WIDTH / 2 + (Math.random()*200-100), y: WORLD_HEIGHT / 2 + (Math.random()*200-100) };
+  const position = { x: Math.random()*WORLD_WIDTH, y: Math.random()*WORLD_HEIGHT };
   const velocity = { x: 0, y: 0 };
   const existing = new Set(gameState.players.map(p=>p.name));
   return {
@@ -360,7 +360,7 @@ const createUFO = () => {
     frequency,
     speed,
     radius: UFO_RADIUS,
-    shootTimer: UFO_SHOOT_INTERVAL,
+  shootTimer: 0, // fire immediately on first update frame
     health: 1
   };
 };
@@ -775,7 +775,7 @@ const updateGameState = () => {
       player.respawnTimer--;
       if (player.respawnTimer <= 0) {
         player.dead = false;
-        player.position = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 };
+  player.position = { x: Math.random()*WORLD_WIDTH, y: Math.random()*WORLD_HEIGHT };
         player.velocity = { x: 0, y: 0 };
         player.invulnerable = true;
         setTimeout(() => { player.invulnerable = false; }, 2000);
@@ -1443,7 +1443,7 @@ io.on('connection', (socket) => {
       id: socket.id,
       name: playerName,
   color: assignPlayerColor(),
-      position: { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 },
+  position: { x: Math.random()*WORLD_WIDTH, y: Math.random()*WORLD_HEIGHT },
       velocity: { x: 0, y: 0 },
       rotation: 0,
       score: 0,
