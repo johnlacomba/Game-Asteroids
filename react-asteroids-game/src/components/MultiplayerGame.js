@@ -18,6 +18,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
   const [showUfoWarning, setShowUfoWarning] = useState(false);
   const animationFrameRef = useRef(null);
   const rotationRef = useRef(0);
+  const showScoreboardRef = useRef(false);
   
   // Cache for asteroid & UFO instances
   const asteroidInstancesRef = useRef(new Map());
@@ -436,7 +437,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
       context.textAlign = 'left';
     }
 
-    // Draw active powerups
+  // Draw active powerups
   let powerupY = gameState.leader ? 105 : 80;
     if (myPlayer && myPlayer.activePowerups && myPlayer.activePowerups.forEach) {
       myPlayer.activePowerups.forEach((powerup, type) => {
@@ -445,6 +446,41 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
         context.fillText(`${type}${stackText}: ${seconds}s`, 20, powerupY);
         powerupY += 25;
       });
+    }
+
+    // Scoreboard overlay when Tab held
+    if (showScoreboardRef.current && renderState.players) {
+      const sortedPlayers = [...renderState.players].sort((a,b)=> (b.highScore||0) - (a.highScore||0));
+      const boxWidth = 360;
+      const rowHeight = 22;
+      const headerHeight = 30;
+      const rows = Math.min(sortedPlayers.length, 25);
+      const boxHeight = headerHeight + rows*rowHeight + 12;
+      context.save();
+      context.globalAlpha = 0.85;
+      context.fillStyle = '#000';
+      context.fillRect((canvas.width-boxWidth)/2, 100, boxWidth, boxHeight);
+      context.globalAlpha = 1;
+      context.strokeStyle = '#FFFFFF';
+      context.strokeRect((canvas.width-boxWidth)/2, 100, boxWidth, boxHeight);
+      context.fillStyle = '#FFFFFF';
+      context.font = '16px Arial';
+      context.textAlign = 'center';
+      context.fillText('Players (High Scores)', canvas.width/2, 122);
+      context.textAlign = 'left';
+      context.font = '13px Arial';
+      let y = 142;
+      sortedPlayers.slice(0, rows).forEach(p => {
+        const isMe = p.id === playerIdRef.current;
+        context.fillStyle = isMe ? '#00FFFF' : '#FFFFFF';
+        const name = p.name || 'Player';
+        context.fillText(name, (canvas.width-boxWidth)/2 + 14, y);
+        context.textAlign = 'right';
+        context.fillText(String(p.highScore || 0), (canvas.width+boxWidth)/2 - 14, y);
+        context.textAlign = 'left';
+        y += rowHeight;
+      });
+      context.restore();
     }
 
     // Draw UFO warning
@@ -469,14 +505,16 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
   }, [gameLoop]);
 
   useEffect(() => {
-    const handleKeyPress = (e) => {
-      if (e.key === 'Escape' && onBackToTitle) {
-        onBackToTitle();
-      }
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && onBackToTitle) onBackToTitle();
+      if (e.key === 'Tab') { e.preventDefault(); showScoreboardRef.current = true; }
     };
-
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
+    const handleKeyUp = (e) => {
+      if (e.key === 'Tab') { e.preventDefault(); showScoreboardRef.current = false; }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
   }, [onBackToTitle]);
 
   if (!connected) {

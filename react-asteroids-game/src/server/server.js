@@ -977,9 +977,14 @@ const updateGameState = () => {
       if (checkCirclePolygonCollision(bulletCircle, asteroidPolygon)) {
         const player = gameState.players.find(p => p.id === bullet.playerId);
         if (player) {
-          player.score += Math.floor(100 + asteroid.radius * 2);
+          // Accumulate score delta (powerShot bullets grant bonus) then update highScore immediately
+          let scoreDelta = Math.floor(100 + asteroid.radius * 2);
+          if (bullet.radius > 2) scoreDelta += 50;
+          player.score += scoreDelta;
+          if (player.score > (player.highScore || 0)) {
+            player.highScore = player.score;
+          }
           updateLeaderForPlayer(player);
-          if (bullet.radius > 2) { player.score += 50; updateLeaderForPlayer(player); }
         }
         if (!bullet.bouncing) { gameState.bullets.splice(bi, 1); releaseBullet(bullet); }
         if (Math.random() < POWERUP_SPAWN_CHANCE) { gameState.powerups.push(createPowerup(asteroid.position)); }
