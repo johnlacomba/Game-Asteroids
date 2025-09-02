@@ -11,7 +11,7 @@ const MultiplayerGame = ({ onBackToTitle }) => {
   const playerIdRef = useRef(null);
   const [gameState, setGameState] = useState(null);
   const [connected, setConnected] = useState(false);
-  const [playerCount, setPlayerCount] = useState(0);
+  // Removed player count display
   const [showUfoWarning, setShowUfoWarning] = useState(false);
   const animationFrameRef = useRef(null);
   const rotationRef = useRef(0);
@@ -107,9 +107,7 @@ const MultiplayerGame = ({ onBackToTitle }) => {
       setGameState(state);
     });
 
-    socketRef.current.on('playerCount', (count) => {
-      setPlayerCount(count);
-    });
+  // playerCount no longer tracked/displayed
 
     socketRef.current.on('ufoSwarmIncoming', () => {
       setShowUfoWarning(true);
@@ -392,12 +390,14 @@ const MultiplayerGame = ({ onBackToTitle }) => {
     context.fillStyle = 'white';
     context.font = '20px Arial';
     context.textAlign = 'left';
-    context.fillText(`Score: ${myPlayer.score}`, 20, 30);
-  // Lives removed for infinite respawns
-    context.fillText(`Players: ${playerCount}`, 20, 80);
+  context.fillText(`Score: ${myPlayer.score}`, 20, 30);
+    context.fillText(`High: ${myPlayer.highScore || 0}`, 20, 55);
+    if (gameState.leader) {
+      context.fillText(`Top: ${gameState.leader.name} ${gameState.leader.best}`, 20, 80);
+    }
 
     // Draw active powerups
-  let powerupY = 80;
+  let powerupY = gameState.leader ? 105 : 80;
     if (myPlayer.activePowerups && myPlayer.activePowerups.forEach) {
       myPlayer.activePowerups.forEach((powerup, type) => {
         const seconds = Math.ceil(powerup.duration / 60);
@@ -417,7 +417,7 @@ const MultiplayerGame = ({ onBackToTitle }) => {
 
 
     animationFrameRef.current = requestAnimationFrame(gameLoop);
-  }, [connected, gameState, playerCount, showUfoWarning]);
+  }, [connected, gameState, showUfoWarning]);
 
   useEffect(() => {
     animationFrameRef.current = requestAnimationFrame(gameLoop);
@@ -470,9 +470,7 @@ const MultiplayerGame = ({ onBackToTitle }) => {
         textAlign: 'center'
       }}>
         Waiting for game to start...
-        <p style={{ fontSize: '16px', marginTop: '20px' }}>
-          Players connected: {playerCount}
-        </p>
+        
         <p style={{ fontSize: '16px', marginTop: '10px' }}>
           Press <strong>Escape</strong> to return to Title Screen
         </p>

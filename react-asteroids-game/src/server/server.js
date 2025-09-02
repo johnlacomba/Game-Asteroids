@@ -828,8 +828,12 @@ const updateGameState = () => {
       const asteroidPolygon = getAsteroidPolygon(asteroidForCollision);
       
       if (checkPolygonCollision(playerPolygon, asteroidPolygon)) {
-        // Trigger death state (camera hold handled client-side)
         if (!player.dead) {
+          player.highScore = Math.max(player.highScore || 0, player.score || 0);
+          player.score = 0;
+          player.activePowerups = {}; // remove all powerups
+          player.speedMultiplier = 1;
+          player.shootTimer = 0;
           player.dead = true;
           deadThisFrame.add(player.id);
           player.deathPosition = { x: player.position.x, y: player.position.y };
@@ -927,6 +931,11 @@ const updateGameState = () => {
       const ufoPoly = getUFOPolygon(ufo);
       if (checkPolygonCollision(playerPoly, ufoPoly)) {
         if (!player.dead) {
+          player.highScore = Math.max(player.highScore || 0, player.score || 0);
+          player.score = 0;
+          player.activePowerups = {};
+          player.speedMultiplier = 1;
+          player.shootTimer = 0;
           player.dead = true;
           deadThisFrame.add(player.id);
           player.deathPosition = { x: player.position.x, y: player.position.y };
@@ -951,6 +960,11 @@ const updateGameState = () => {
       if (dx * dx + dy * dy < (20) * (20)) { // ship approx radius 20
         gameState.ufoBullets.splice(i, 1);
         if (!player.dead) {
+          player.highScore = Math.max(player.highScore || 0, player.score || 0);
+          player.score = 0;
+          player.activePowerups = {};
+          player.speedMultiplier = 1;
+          player.shootTimer = 0;
           player.dead = true;
           deadThisFrame.add(player.id);
           player.deathPosition = { x: player.position.x, y: player.position.y };
@@ -979,6 +993,7 @@ io.on('connection', (socket) => {
       velocity: { x: 0, y: 0 },
       rotation: 0,
       score: 0,
+  highScore: 0,
   lives: Infinity, // UI convenience; not decremented anymore
       activePowerups: {},
       delete: false,
@@ -1028,8 +1043,17 @@ initializeStars();
 initializeAsteroids();
 setInterval(() => {
   updateGameState();
-  // Emit trimmed state (currently whole object). UFO objects retain position/progress between frames.
-  io.emit('gameState', gameState);
+  // Compute global leader (highest personal best among players)
+  let leader = null;
+  for (const p of gameState.players) {
+    const best = Math.max(p.highScore || 0, p.score || 0);
+    if (!leader || best > leader.best) {
+      leader = { id: p.id, name: p.name, best };
+    }
+  }
+  const stateToSend = { ...gameState, leader };
+  // Emit state (currently whole object). UFO objects retain position/progress between frames.
+  io.emit('gameState', stateToSend);
 }, 1000 / 60);
 
 // Serve React app for any other routes
