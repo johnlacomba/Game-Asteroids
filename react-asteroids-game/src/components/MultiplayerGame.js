@@ -80,7 +80,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
       playerIdRef.current = data.playerId;
     });
 
-    socketRef.current.on('gameState', (state) => {
+  socketRef.current.on('gameState', (state) => {
       previousStateRef.current = gameState || state;
       if (state.players) {
         state.players = state.players.map(player => ({
@@ -123,6 +123,8 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
       setConnected(false);
     });
 
+  // removed bulletDiag and bulletReplicated handlers
+
     return () => {
       if (socketRef.current) {
         socketRef.current.disconnect();
@@ -155,6 +157,8 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
       const t = Math.min(1, dt / serverTickIntervalMs);
       const interp = (prevArr, curArr) => curArr.map(obj => {
         const prev = prevArr.find(o => o.id === obj.id) || obj;
+  // Skip interpolation only for very new bullets for minor smoothing
+  if (obj.lifeTime !== undefined && obj.lifeTime <= 2) return obj;
         if (obj.position && prev.position) {
           return { ...obj, position: { x: prev.position.x + (obj.position.x - prev.position.x) * t, y: prev.position.y + (obj.position.y - prev.position.y) * t } };
         }

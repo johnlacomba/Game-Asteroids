@@ -26,8 +26,7 @@ function handleKeyDown(e) {
     keys[' '] = true;
   }
   
-  // Debug logging to see what keys are being pressed
-  console.log('Key pressed:', e.key, 'Code:', e.code, 'Current keys:', {...keys});
+  // removed debug logging
 }
 
 function handleKeyUp(e) {
@@ -43,13 +42,12 @@ function handleKeyUp(e) {
     keys[' '] = false;
   }
   
-  // Debug logging
-  console.log('Key released:', e.key, 'Code:', e.code, 'Current keys:', {...keys});
+  // removed debug logging
 }
 
 function handleBlur() {
   // Clear all keys when window loses focus
-  console.log('Window lost focus, clearing all keys');
+  // removed debug logging
   Object.keys(keys).forEach(key => {
     keys[key] = false;
   });
@@ -58,7 +56,7 @@ function handleBlur() {
 function initializeInput() {
   if (initialized) return;
   
-  console.log('Initializing input controller');
+  // removed debug logging
   
   // Remove existing listeners first to prevent duplicates
   window.removeEventListener('keydown', handleKeyDown, true);
@@ -84,15 +82,13 @@ export function handleInput() {
   const currentKeys = { ...keys };
   
   // Debug: Log current key state every few frames
-  if (Math.random() < 0.01) { // 1% chance to log
-    console.log('Current input state:', currentKeys);
-  }
+  // removed random debug logging
   
   return currentKeys;
 }
 
 export function cleanup() {
-  console.log('Cleaning up input controller');
+  // removed debug logging
   
   if (initialized) {
     window.removeEventListener('keydown', handleKeyDown, true);

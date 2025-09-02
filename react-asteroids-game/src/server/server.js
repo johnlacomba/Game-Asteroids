@@ -387,12 +387,18 @@ const applyPowerup = (player, powerupType) => {
 
   // If powerup already active, stack it or refresh duration
   if (player.activePowerups[powerupType]) {
-    // Stack effect (max 3 times)
     if (player.activePowerups[powerupType].stack < 3) {
       player.activePowerups[powerupType].stack += 1;
     }
-    // Refresh duration
-    player.activePowerups[powerupType].duration = POWERUP_DURATIONS[powerupType];
+    // Custom stacking duration behavior for specific powerups
+    if (powerupType === 'invulnerability') {
+      const stack = player.activePowerups[powerupType].stack;
+      // 1st = 10s (unchanged), 2nd -> 20s, 3rd -> 30s
+      const seconds = stack * 10; // stack 1 =>10, 2=>20, 3=>30
+      player.activePowerups[powerupType].duration = seconds * 60;
+    } else {
+      player.activePowerups[powerupType].duration = POWERUP_DURATIONS[powerupType];
+    }
   } else {
     // Apply new powerup
     player.activePowerups[powerupType] = {
@@ -772,20 +778,10 @@ const updateGameState = () => {
     bullet.position.x += bullet.velocity.x;
     bullet.position.y += bullet.velocity.y;
     bullet.lifeTime = (bullet.lifeTime || 0) + 1;
-    
-    // Handle bouncing bullets - matches offline mode
     if (bullet.bouncing) {
-      if (bullet.position.x <= 0 || bullet.position.x >= WORLD_WIDTH) {
-        bullet.velocity.x *= -1;
-        bullet.bounceCount = (bullet.bounceCount || 0) + 1;
-      }
-      if (bullet.position.y <= 0 || bullet.position.y >= WORLD_HEIGHT) {
-        bullet.velocity.y *= -1;
-        bullet.bounceCount = (bullet.bounceCount || 0) + 1;
-      }
-      
-      // Limit bounce count to prevent eternal bullets
-      return bullet.lifeTime < 600 && (bullet.bounceCount || 0) < 5;
+      if (bullet.position.x <= 0 || bullet.position.x >= WORLD_WIDTH) bullet.velocity.x *= -1;
+      if (bullet.position.y <= 0 || bullet.position.y >= WORLD_HEIGHT) bullet.velocity.y *= -1;
+      return bullet.lifeTime < 600;
     }
     
     return isValidPosition(bullet.position, bullet.radius) && bullet.lifeTime < 300;
@@ -820,7 +816,12 @@ const updateGameState = () => {
             const b = acquireBullet();
             b.id = `bullet_${Date.now()}_${Math.random()}`;
             b.position = { x: player.position.x, y: player.position.y };
-            b.velocity = { x: Math.cos(angle) * 8, y: Math.sin(angle) * 8 };
+            let speed = 8;
+            if (player.activePowerups && player.activePowerups.powerShot) {
+              const psStack = player.activePowerups.powerShot.stack || 1;
+              speed *= (1 + 0.33 * (psStack - 1));
+            }
+            b.velocity = { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed };
             b.radius = player.activePowerups && player.activePowerups.powerShot ? 4 : 2;
             b.playerId = player.id;
             b.lifeTime = 0;
@@ -833,7 +834,12 @@ const updateGameState = () => {
           const b = acquireBullet();
           b.id = `bullet_${Date.now()}_${Math.random()}`;
           b.position = { x: player.position.x, y: player.position.y };
-          b.velocity = { x: Math.cos(radians) * 8, y: Math.sin(radians) * 8 };
+          let speed = 8;
+          if (player.activePowerups && player.activePowerups.powerShot) {
+            const psStack = player.activePowerups.powerShot.stack || 1;
+            speed *= (1 + 0.33 * (psStack - 1));
+          }
+          b.velocity = { x: Math.cos(radians) * speed, y: Math.sin(radians) * speed };
           b.radius = player.activePowerups && player.activePowerups.powerShot ? 4 : 2;
           b.playerId = player.id;
           b.lifeTime = 0;
@@ -857,6 +863,8 @@ const updateGameState = () => {
   // Handle homing bullets - EXACTLY matching Bullet.js from offline mode
   gameState.bullets.forEach(bullet => {
     if (bullet.homing) {
+      // Honor optional homing delay (used by replicated bouncing bullets)
+  // removed homing delay logic
       // Find the nearest asteroid - exactly matching offline logic
       let closestAsteroid = null;
       let closestDistance = Infinity;
@@ -883,8 +891,9 @@ const updateGameState = () => {
         
         // Match the exact Bullet.js homing strength calculation
         // In offline mode it's 0.2 base + 0.1 per stack level after the first
-        const stackLevel = player?.activePowerups?.homingShot?.stack || 1;
-        const homingStrength = 0.2 + ((stackLevel - 1) * 0.1);
+  const stackLevel = player?.activePowerups?.homingShot?.stack || 1;
+  // Base 0.2 then +0.15 per extra stack (1=>0.2, 2=>0.35, 3=>0.5)
+  const homingStrength = 0.2 + ((stackLevel - 1) * 0.15);
         
         bullet.velocity.x += Math.cos(angle) * homingStrength;
         bullet.velocity.y += Math.sin(angle) * homingStrength;
@@ -1398,7 +1407,19 @@ setInterval(() => {
     stars: gameState.stars.length
   };
   const objectCount = Object.values(objectCounts).reduce((a,b)=>a+b,0);
-  io.emit('gameState', { ...gameState, leader: globalLeader, tick, serverTime: Date.now(), objectCount, objectCounts });
+  // Build a serializable shallow snapshot (avoid leaking pooled object references / unexpected props)
+  const snapshot = {
+    players: gameState.players.map(p=>({ id:p.id,name:p.name,position:p.position,velocity:p.velocity,rotation:p.rotation,score:p.score,highScore:p.highScore,dead:p.dead,deathPosition:p.deathPosition,invulnerable:p.invulnerable,activePowerups:p.activePowerups || {} })),
+    asteroids: gameState.asteroids.map(a=>({ id:a.id,position:a.position,velocity:a.velocity,radius:a.radius,angle:a.angle,spin:a.spin })),
+    ufos: gameState.ufos.map(u=>({ id:u.id, position:u.position, velocity:u.velocity, radius:u.radius, exploding:u.exploding, explosionTimer:u.explosionTimer })),
+  bullets: gameState.bullets.map(b=>({ id:b.id, position:b.position, velocity:b.velocity, radius:b.radius, playerId:b.playerId, lifeTime:b.lifeTime, bouncing:!!b.bouncing, homing:!!b.homing })),
+    ufoBullets: gameState.ufoBullets.map(b=>({ id:b.id, position:b.position, velocity:b.velocity, radius:b.radius, lifeTime:b.lifeTime })),
+    powerups: gameState.powerups.map(pw=>({ id:pw.id, type:pw.type, position:pw.position, lifeTimer:pw.lifeTimer })),
+    stars: gameState.stars, // already simple
+  };
+  io.emit('gameState', { ...snapshot, leader: globalLeader, tick, serverTime: Date.now(), objectCount, objectCounts });
+  // Diagnostic: emit separate minimal bullet diagnostics for bouncing replication debugging
+  // removed bulletDiag debug emission
 }, 1000 / 60);
 
 // Serve React app for any other routes
