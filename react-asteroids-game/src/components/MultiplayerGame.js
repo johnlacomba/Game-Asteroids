@@ -70,7 +70,10 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
 
   // Initialize socket connection
   useEffect(() => {
-    socketRef.current = io('http://localhost:5001');
+  // Dynamic base URL for LAN: use current hostname; assume server port 5001 unless overridden
+  const host = window.location.hostname;
+  const port = 5001; // keep in sync with server PORT
+  socketRef.current = io(`http://${host}:${port}`);
 
     socketRef.current.on('connect', () => {
       setConnected(true);
