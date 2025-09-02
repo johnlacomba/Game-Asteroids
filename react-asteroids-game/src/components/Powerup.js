@@ -22,6 +22,7 @@ export default class Powerup {
       speedUp: { letter: 'P', color: '#00B0FF' }, // sky blue
       powerShot: { letter: 'PS', color: '#FF8C00' }, // orange (distinct from red)
       bouncingBullets: { letter: 'BB', color: '#7DFFB5' }, // mint
+  scoreMultiplier: { letter: 'SM', color: '#FFD700' }, // gold
     };
     this.visuals = properties[this.type];
   }

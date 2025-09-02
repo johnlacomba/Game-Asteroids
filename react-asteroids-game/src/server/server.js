@@ -271,7 +271,8 @@ const POWERUP_TYPES = [
   'homingShot', 
   'speedUp', 
   'powerShot', 
-  'bouncingBullets'
+  'bouncingBullets',
+  'scoreMultiplier'
 ];
 
 const POWERUP_DURATIONS = {
@@ -281,14 +282,17 @@ const POWERUP_DURATIONS = {
   homingShot: 30 * 60,        
   speedUp: 60 * 60,           
   powerShot: 30 * 60,       
-  bouncingBullets: 30 * 60   
+  bouncingBullets: 30 * 60,  
+  scoreMultiplier: 30 * 60
 };
 
 // UFO constants
 const UFO_RADIUS = 15;
 const UFO_WAVE_SIZE = 25; // spawn roughly 25 at once
 const UFO_POWERUP_DROP_CHANCE = 0.15; // 15% chance a destroyed UFO drops a powerup
-const UFO_SPAWN_CHANCE = 0.002; // probability per frame to trigger a wave when none active
+// UFO spawn pacing now controlled by a dynamic timer; keep legacy chance as a fallback low value
+const UFO_SPAWN_CHANCE = 0.0005; // minimal random chance safety net
+let ufoSpawnCooldown = 0; // frames until next wave eligible (dynamic)
 const UFO_SHOOT_INTERVAL = 180; // 3 seconds @60fps
 const UFO_BULLET_SPEED = 5;
 
@@ -467,6 +471,8 @@ const applyPowerup = (player, powerupType) => {
   if (powerupType === 'speedUp') {
     // Increase player movement speed
     player.speedMultiplier = (player.speedMultiplier || 1) * 1.5;
+  } else if (powerupType === 'scoreMultiplier') {
+    // no immediate stat; scoring logic will consult stack
   }
 };
 
@@ -1017,13 +1023,18 @@ const updateGameState = () => {
       if (checkCirclePolygonCollision(bulletCircle, asteroidPolygon)) {
         const player = gameState.players.find(p => p.id === bullet.playerId);
         if (player) {
-          // Accumulate score delta (powerShot bullets grant bonus) then update highScore immediately
-          let scoreDelta = Math.floor(100 + asteroid.radius * 2);
-          if (bullet.radius > 2) scoreDelta += 50;
-          player.score += scoreDelta;
-          if (player.score > (player.highScore || 0)) {
-            player.highScore = player.score;
+          let base = Math.floor(100 + asteroid.radius * 2);
+          if (bullet.radius > 2) base += 50;
+          // Apply score multiplier: 1x base, +0.5x per extra stack (1=>1x,2=>1.5x,3=>2x)
+          let mult = 1;
+          const sm = player.activePowerups?.scoreMultiplier;
+          if (sm) {
+            const s = sm.stack || 1;
+            mult = 1 + 0.5 * (s - 1); // 1,1.5,2
           }
+          const scoreDelta = Math.floor(base * mult);
+          player.score += scoreDelta;
+          if (player.score > (player.highScore || 0)) player.highScore = player.score;
           updateLeaderForPlayer(player);
         }
         if (!bullet.bouncing) { gameState.bullets.splice(bi, 1); releaseBullet(bullet); }
@@ -1161,12 +1172,38 @@ const updateGameState = () => {
     gameState.asteroids.push(createAsteroid());
   }
 
-  // Spawn UFO wave when none active
-  if (gameState.ufos.length === 0 && Math.random() < UFO_SPAWN_CHANCE) {
-    for (let i = 0; i < UFO_WAVE_SIZE; i++) {
-      gameState.ufos.push(createUFO());
+  // Spawn UFO wave when none active (dynamic size & cadence based on total active powerup stacks)
+  if (gameState.ufos.length === 0) {
+    // Count total stacks
+    let totalStacks = 0;
+    for (const p of gameState.players) {
+      const ap = p.activePowerups;
+      if (!ap) continue;
+      for (const key in ap) {
+        if (ap[key] && ap[key].stack) totalStacks += ap[key].stack;
+      }
     }
-    if (io.emit) io.emit('ufoSwarmIncoming');
+    // Dynamic size: each stack adds 1.2 UFOs, capped to reach 2500 max
+    const EXTRA_PER_STACK = 1.2;
+    const MAX_EXTRA = 2475; // 25 base + 2475 = 2500
+    const extra = Math.min(MAX_EXTRA, Math.floor(totalStacks * EXTRA_PER_STACK));
+    const waveSize = Math.min(2500, UFO_WAVE_SIZE + extra);
+
+    // Dynamic cadence: base interval long, shrinks toward 180 frames (~3s) as stacks rise
+    // Use a diminishing function so large stacks rapidly approach the floor but never exceed it
+    const BASE_INTERVAL = 1800; // 30 seconds at 60fps starting point
+    const MIN_INTERVAL = 180;  // 3 seconds target
+    // Scale factor: more stacks => smaller interval; choose k so ~200 total stacks ~ near min
+    const k = 0.02; // tuning coefficient
+    const interval = Math.max(MIN_INTERVAL, Math.floor(BASE_INTERVAL / (1 + k * totalStacks)));
+    if (ufoSpawnCooldown > 0) ufoSpawnCooldown--; // tick down
+    if (ufoSpawnCooldown <= 0 || Math.random() < UFO_SPAWN_CHANCE) {
+      if (waveSize > 0) {
+        for (let i = 0; i < waveSize; i++) gameState.ufos.push(createUFO());
+        if (io.emit) io.emit('ufoSwarmIncoming');
+      }
+      ufoSpawnCooldown = interval; // reset based on current stack intensity
+    }
   }
 
   // Update UFOs (meandering path)

@@ -308,6 +308,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
           speedUp: '#00B0FF',         // sky blue
           powerShot: '#FF8C00',       // orange (still non-red)
           bouncingBullets: '#7DFFB5', // mint
+          scoreMultiplier: '#FFD700', // gold
         };
         
         context.strokeStyle = colors[powerup.type] || '#FFFFFF';
@@ -327,6 +328,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
           speedUp: 'P',
           powerShot: 'PS',
           bouncingBullets: 'BB',
+          scoreMultiplier: 'SM'
         };
         
         context.fillText(letters[powerup.type] || '?', 0, 0);

@@ -34,7 +34,7 @@ const Game = ({ onBackToTitle }) => {
   const BASE_SHOOT_COOLDOWN = 15;
   const WORLD_WIDTH = 3000;
   const WORLD_HEIGHT = 2000;
-  const POWERUP_TYPES = ['rapidFire', 'invulnerability', 'spreadShot', 'homingShot', 'speedUp', 'powerShot', 'bouncingBullets'];
+  const POWERUP_TYPES = ['rapidFire', 'invulnerability', 'spreadShot', 'homingShot', 'speedUp', 'powerShot', 'bouncingBullets', 'scoreMultiplier'];
   const POWERUP_THRESHOLD = 5;
   const UFO_SWARM_SIZE = 36;
   const UFO_FLASH_DURATION = 120;
@@ -122,6 +122,7 @@ const Game = ({ onBackToTitle }) => {
         speedUp: 60 * 60,
         powerShot: 30 * 60,
         bouncingBullets: 30 * 60,
+        scoreMultiplier: 30 * 60,
       };
       
       const existing = activePowerupsRef.current.get(type);
@@ -366,7 +367,10 @@ const Game = ({ onBackToTitle }) => {
             let hitPointsRemaining = asteroid.hitPoints - damage;
             
             if (hitPointsRemaining <= 0) {
-              scoreRef.current += 100;
+              let mult = 1;
+              const sm = activePowerupsRef.current.get('scoreMultiplier');
+              if (sm) mult = 1 + 0.5 * (sm.stack - 1);
+              scoreRef.current += Math.floor(100 * mult);
               spawnPowerup(asteroid.position);
               asteroid.destroy();
             } else {
@@ -387,7 +391,10 @@ const Game = ({ onBackToTitle }) => {
           if (!bullet.delete && checkCirclePolygonCollision(bullet, ufoPolygon)) {
             bullet.delete = true;
             ufo.destroy();
-            scoreRef.current += 500;
+            let mult = 1;
+            const sm = activePowerupsRef.current.get('scoreMultiplier');
+            if (sm) mult = 1 + 0.5 * (sm.stack - 1);
+            scoreRef.current += Math.floor(500 * mult);
             spawnPowerup(ufo.position);
           }
         });
