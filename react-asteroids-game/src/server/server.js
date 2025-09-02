@@ -779,11 +779,27 @@ const updateGameState = () => {
     bullet.position.y += bullet.velocity.y;
     bullet.lifeTime = (bullet.lifeTime || 0) + 1;
     if (bullet.bouncing) {
-      if (bullet.position.x <= 0 || bullet.position.x >= WORLD_WIDTH) bullet.velocity.x *= -1;
-      if (bullet.position.y <= 0 || bullet.position.y >= WORLD_HEIGHT) bullet.velocity.y *= -1;
+      // Track bounce count
+      if (bullet.bounceCount === undefined) bullet.bounceCount = 0;
+
+      // Determine allowed bounces from owner's bouncingBullets stack (1/2/3) default 1
+      let allowedBounces = 1;
+      if (bullet.playerId) {
+        const owner = gameState.players.find(p => p.id === bullet.playerId);
+        if (owner && owner.activePowerups && owner.activePowerups.bouncingBullets) {
+          const stack = owner.activePowerups.bouncingBullets.stack || 1;
+            allowedBounces = Math.min(3, Math.max(1, stack));
+        }
+      }
+
+      let bounced = false;
+      if (bullet.position.x <= 0 || bullet.position.x >= WORLD_WIDTH) { bullet.velocity.x *= -1; bounced = true; }
+      if (bullet.position.y <= 0 || bullet.position.y >= WORLD_HEIGHT) { bullet.velocity.y *= -1; bounced = true; }
+      if (bounced) bullet.bounceCount++;
+      // Expire if exceeded allowed bounces
+      if (bullet.bounceCount > allowedBounces) return false;
       return bullet.lifeTime < 600;
     }
-    
     return isValidPosition(bullet.position, bullet.radius) && bullet.lifeTime < 300;
   });
 
