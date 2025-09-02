@@ -10,6 +10,9 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
   const socketRef = useRef(null);
   const playerIdRef = useRef(null);
   const [gameState, setGameState] = useState(null);
+  const previousStateRef = useRef(null);
+  const lastReceiveTimeRef = useRef(0);
+  const serverTickIntervalMs = 1000 / 60; // matches server broadcast (updated from 30Hz)
   const [connected, setConnected] = useState(false);
   // Removed player count display
   const [showUfoWarning, setShowUfoWarning] = useState(false);
@@ -78,12 +81,14 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
     });
 
     socketRef.current.on('gameState', (state) => {
+      previousStateRef.current = gameState || state;
       if (state.players) {
         state.players = state.players.map(player => ({
           ...player,
           activePowerups: new Map(Object.entries(player.activePowerups || {}))
         }));
       }
+      lastReceiveTimeRef.current = performance.now();
       
       // Clean up asteroid instances that no longer exist
       if (state.asteroids) {
@@ -128,7 +133,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
 
   // Input and rendering loop
   const gameLoop = useCallback(() => {
-    if (!connected || !gameState) {
+  if (!connected || !gameState) {
       animationFrameRef.current = requestAnimationFrame(gameLoop);
       return;
     }
@@ -143,7 +148,29 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
     canvas.width = 1024;
     canvas.height = 768;
 
-  const myPlayer = gameState.players.find(p => p.id === playerIdRef.current);
+    // Interpolate snapshot
+    let renderState = gameState;
+    if (previousStateRef.current && previousStateRef.current !== gameState) {
+      const dt = performance.now() - lastReceiveTimeRef.current;
+      const t = Math.min(1, dt / serverTickIntervalMs);
+      const interp = (prevArr, curArr) => curArr.map(obj => {
+        const prev = prevArr.find(o => o.id === obj.id) || obj;
+        if (obj.position && prev.position) {
+          return { ...obj, position: { x: prev.position.x + (obj.position.x - prev.position.x) * t, y: prev.position.y + (obj.position.y - prev.position.y) * t } };
+        }
+        return obj;
+      });
+      renderState = {
+        ...gameState,
+        players: interp(previousStateRef.current.players || [], gameState.players || []),
+        asteroids: interp(previousStateRef.current.asteroids || [], gameState.asteroids || []),
+        ufos: interp(previousStateRef.current.ufos || [], gameState.ufos || []),
+        bullets: interp(previousStateRef.current.bullets || [], gameState.bullets || []),
+        ufoBullets: interp(previousStateRef.current.ufoBullets || [], gameState.ufoBullets || [])
+      };
+    }
+
+  const myPlayer = renderState.players.find(p => p.id === playerIdRef.current);
     if (!myPlayer) {
       animationFrameRef.current = requestAnimationFrame(gameLoop);
       return;
@@ -189,7 +216,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
 
     // Draw stars
     context.fillStyle = 'white';
-    gameState.stars.forEach(star => {
+  renderState.stars.forEach(star => {
       context.beginPath();
       context.arc(star.x, star.y, star.radius, 0, 2 * Math.PI);
       context.fill();
@@ -201,7 +228,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
     context.strokeRect(0, 0, 3000, 2000);
 
     // Draw players (skip drawing ship geometry if dead so debris is visible)
-  gameState.players.forEach(player => {
+  renderState.players.forEach(player => {
       
       context.save();
       context.translate(player.position.x, player.position.y);
@@ -233,7 +260,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
     });
 
     // Draw bullets
-    gameState.bullets.forEach(bullet => {
+  renderState.bullets.forEach(bullet => {
       context.save();
       context.translate(bullet.position.x, bullet.position.y);
       context.fillStyle = bullet.bouncing ? '#00FFFF' : '#FFFFFF';
@@ -244,7 +271,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
     });
 
     // Draw UFO bullets
-    gameState.ufoBullets.forEach(bullet => {
+  renderState.ufoBullets.forEach(bullet => {
       context.save();
       context.translate(bullet.position.x, bullet.position.y);
       context.fillStyle = '#FF4444';
@@ -255,7 +282,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
     });
 
     // Draw asteroids using the same Asteroid class as offline mode
-    gameState.asteroids.forEach(asteroidData => {
+  renderState.asteroids.forEach(asteroidData => {
       const asteroidInstance = getAsteroidInstance(asteroidData);
       asteroidInstance.draw(context);
     });
@@ -306,8 +333,8 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
     });
 
     // Draw UFOs & spawn explosion debris when exploding
-    if (gameState.ufos) {
-      gameState.ufos.forEach(ufoData => {
+    if (renderState.ufos) {
+      renderState.ufos.forEach(ufoData => {
         if (ufoData.exploding) {
           if (!processedExplodingUFORef.current.has(ufoData.id)) {
             // Create debris pieces similar to ship but with more segments
