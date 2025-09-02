@@ -19,6 +19,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
   const animationFrameRef = useRef(null);
   const rotationRef = useRef(0);
   const showScoreboardRef = useRef(false);
+  const scoreboardHitRegionsRef = useRef([]); // store clickable scoreboard buttons (bot remove, add bot)
   
   // Cache for asteroid & UFO instances
   const asteroidInstancesRef = useRef(new Map());
@@ -468,6 +469,22 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
       context.textAlign = 'left';
       context.font = '13px Arial';
       let y = 142;
+      scoreboardHitRegionsRef.current = [];
+      // Add Bot button (top-right inside box)
+      const addBtnW = 60; const addBtnH = 18;
+      const addBtnX = (canvas.width + boxWidth)/2 - addBtnW - 12;
+      const addBtnY = 106; // slightly below top border
+      context.strokeStyle = '#55FF55';
+      context.lineWidth = 1.5;
+      context.strokeRect(addBtnX, addBtnY, addBtnW, addBtnH);
+      context.fillStyle = '#55FF55';
+      context.font = '12px Arial';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText('+ Bot', addBtnX + addBtnW/2, addBtnY + addBtnH/2 + 0.5);
+      context.textAlign = 'left';
+      context.textBaseline = 'alphabetic';
+      scoreboardHitRegionsRef.current.push({ x: addBtnX, y: addBtnY, w: addBtnW, h: addBtnH, action: 'addBot' });
       sortedPlayers.slice(0, rows).forEach(p => {
         const isMe = p.id === playerIdRef.current;
         context.fillStyle = p.color || (isMe ? '#FFFFFF' : '#AAAAAA');
@@ -476,6 +493,20 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
         context.textAlign = 'right';
         context.fillText(String(p.highScore || 0), (canvas.width+boxWidth)/2 - 14, y);
         context.textAlign = 'left';
+        // Draw remove button for bots
+        if (p.isBot) {
+          const btnX = (canvas.width+boxWidth)/2 - 60; // near score but left
+          const btnY = y - 12; // align with text line
+            const w = 14; const h = 14;
+          context.strokeStyle = '#FF5555';
+          context.lineWidth = 1.5;
+          context.strokeRect(btnX, btnY, w, h);
+          context.beginPath();
+          context.moveTo(btnX+3, btnY + h/2);
+          context.lineTo(btnX + w - 3, btnY + h/2);
+          context.stroke();
+          scoreboardHitRegionsRef.current.push({ x: btnX, y: btnY, w, h, action: 'removeBot', botId: p.id });
+        }
         y += rowHeight;
       });
       context.restore();
@@ -501,6 +532,33 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
       }
     };
   }, [gameLoop]);
+
+  useEffect(() => {
+    // Mouse click handler for scoreboard remove bot buttons
+    const handleClick = (e) => {
+      if (!showScoreboardRef.current) return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      // Scoreboard is drawn in screen space, so direct coords
+      for (const region of scoreboardHitRegionsRef.current) {
+        if (cx >= region.x && cx <= region.x + region.w && cy >= region.y && cy <= region.y + region.h) {
+          if (socketRef.current) {
+            if (region.action === 'removeBot' && region.botId) {
+              socketRef.current.emit('removeBot', region.botId);
+            } else if (region.action === 'addBot') {
+              socketRef.current.emit('addBot');
+            }
+          }
+          break;
+        }
+      }
+    };
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -557,10 +615,6 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
   return (
     <div style={{ position: 'relative' }}>
       <canvas ref={canvasRef} width={window.innerWidth} height={window.innerHeight} style={{ display: 'block', background: 'black' }} />
-      <button
-        style={{ position: 'absolute', bottom: 20, right: 20, zIndex: 10 }}
-        onClick={() => { if (socketRef.current) socketRef.current.emit('addBot'); }}
-      >Add Bot</button>
     </div>
   );
 };

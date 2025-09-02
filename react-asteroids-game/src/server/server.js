@@ -1495,6 +1495,17 @@ io.on('connection', (socket) => {
     console.log('Bot added');
   });
 
+  // Remove a bot by id (admin functionality - trusts client; could tighten with auth)
+  socket.on('removeBot', (botId) => {
+    const before = gameState.players.length;
+    gameState.players = gameState.players.filter(p => !(p.id === botId && p.isBot));
+    if (before !== gameState.players.length) {
+      if (globalLeader && !gameState.players.find(p=>p.id===globalLeader.id)) recomputeLeader();
+      io.emit('playerCount', gameState.players.length);
+      console.log('Bot removed', botId);
+    }
+  });
+
   socket.on('disconnect', () => {
     gameState.players = gameState.players.filter(player => player.id !== socket.id);
     if (globalLeader && globalLeader.id === socket.id) {
@@ -1524,7 +1535,7 @@ setInterval(() => {
   const objectCount = Object.values(objectCounts).reduce((a,b)=>a+b,0);
   // Build a serializable shallow snapshot (avoid leaking pooled object references / unexpected props)
   const snapshot = {
-  players: gameState.players.map(p=>({ id:p.id,name:p.name,color:p.color,position:p.position,velocity:p.velocity,rotation:p.rotation,score:p.score,highScore:p.highScore,dead:p.dead,deathPosition:p.deathPosition,invulnerable:p.invulnerable,activePowerups:p.activePowerups || {} })),
+  players: gameState.players.map(p=>({ id:p.id,name:p.name,isBot:!!p.isBot,color:p.color,position:p.position,velocity:p.velocity,rotation:p.rotation,score:p.score,highScore:p.highScore,dead:p.dead,deathPosition:p.deathPosition,invulnerable:p.invulnerable,activePowerups:p.activePowerups || {} })),
     asteroids: gameState.asteroids.map(a=>({ id:a.id,position:a.position,velocity:a.velocity,radius:a.radius,angle:a.angle,spin:a.spin })),
     ufos: gameState.ufos.map(u=>({ id:u.id, position:u.position, velocity:u.velocity, radius:u.radius, exploding:u.exploding, explosionTimer:u.explosionTimer })),
   bullets: gameState.bullets.map(b=>({ id:b.id, position:b.position, velocity:b.velocity, radius:b.radius, playerId:b.playerId, lifeTime:b.lifeTime, bouncing:!!b.bouncing, homing:!!b.homing })),
