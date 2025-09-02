@@ -5,7 +5,7 @@ import Asteroid from './Asteroid';
 import UFO from './UFO';
 import Debris from './Debris';
 
-const MultiplayerGame = ({ onBackToTitle }) => {
+const MultiplayerGame = ({ onBackToTitle, playerName }) => {
   const canvasRef = useRef(null);
   const socketRef = useRef(null);
   const playerIdRef = useRef(null);
@@ -69,8 +69,8 @@ const MultiplayerGame = ({ onBackToTitle }) => {
 
     socketRef.current.on('connect', () => {
       setConnected(true);
-      const playerName = `Player ${Math.floor(Math.random() * 1000)}`;
-      socketRef.current.emit('joinGame', playerName);
+      const finalName = (playerName && playerName.trim().slice(0,20)) || `Player ${Math.floor(Math.random() * 1000)}`;
+      socketRef.current.emit('joinGame', finalName);
     });
 
     socketRef.current.on('playerJoined', (data) => {

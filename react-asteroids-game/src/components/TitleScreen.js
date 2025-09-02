@@ -1,9 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 const TitleScreen = ({ onModeSelect }) => {
+  const [name, setName] = useState('');
+  const [touched, setTouched] = useState(false);
+  const startGame = () => {
+    const finalName = name.trim().slice(0, 20) || 'Player';
+    onModeSelect('multiplayer', finalName);
+  };
   const handleKeyPress = (e) => {
-    if (e.key === '1' || e.key === 'Enter' || e.key === ' ') {
-      onModeSelect('multiplayer');
+    if (e.key === '1' || e.key === 'Enter') {
+      startGame();
     }
   };
 
@@ -44,7 +50,31 @@ const TitleScreen = ({ onModeSelect }) => {
         lineHeight: '2',
         marginBottom: '60px'
       }}>
-        <div style={{ marginBottom: '20px' }}>Press ENTER to Start Multiplayer</div>
+        <div style={{ marginBottom: '20px' }}>Enter a name & press ENTER</div>
+        <input
+          type="text"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          onBlur={() => setTouched(true)}
+          maxLength={20}
+          placeholder="Your name"
+          style={{
+            padding: '12px 16px',
+            marginBottom: '25px',
+            background: '#111',
+            color: '#FFF',
+            border: '2px solid #00FFFF',
+            borderRadius: '4px',
+            fontSize: '20px',
+            textAlign: 'center',
+            width: '320px',
+            letterSpacing: '1px'
+          }}
+          onKeyDown={e => { if (e.key === 'Enter') startGame(); }}
+        />
+        {touched && name.trim().length === 0 && (
+          <div style={{ color: '#FF6666', fontSize: '14px', marginBottom: '10px' }}>Name optional (defaults to Player)</div>
+        )}
         <div style={{ 
           padding: '28px 32px',
           border: '2px solid #00FF00',
@@ -52,7 +82,7 @@ const TitleScreen = ({ onModeSelect }) => {
           cursor: 'pointer',
           fontSize: '28px'
         }}
-        onClick={() => onModeSelect('multiplayer')}>
+        onClick={startGame}>
           <strong>M U L T I P L A Y E R</strong>
           <div style={{ fontSize: '16px', color: '#CCCCCC', marginTop: '12px', letterSpacing: '1px' }}>
             Server authoritative Asteroids with power-ups & UFOs
