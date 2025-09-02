@@ -56,6 +56,45 @@ let globalLeader = null;
 const BOT_PREFIX = 'BOT_';
 let nextBotId = 1;
 
+// Player color management (avoid reds so hostile UFO bullets remain clearly distinct)
+const PLAYER_COLOR_PALETTE = [
+  '#00FFFF', // cyan
+  '#FFFF00', // yellow
+  '#00FF00', // lime
+  '#00AAFF', // sky blue
+  '#AAFF00', // yellow-green
+  '#00FFA5', // aquamarine
+  '#8888FF', // soft periwinkle
+  '#FFFFFF', // white
+  '#00FFD7', // teal-cyan
+  '#B4FF00'  // chartreuse
+];
+
+function assignPlayerColor() {
+  const used = new Set(gameState.players.map(p => p.color));
+  for (const c of PLAYER_COLOR_PALETTE) {
+    if (!used.has(c)) return c;
+  }
+  // Fallback: generate a non-red random color in HSL and convert to hex
+  // Hue range excluding 330-30 => pick in [30,330)
+  const hue = 30 + Math.random() * 300; // 30..330
+  const s = 80; const l = 55;
+  // hsl to rgb
+  const h = hue / 360;
+  const c = (1 - Math.abs(2 * l/100 - 1)) * (s/100);
+  const x = c * (1 - Math.abs((h * 6) % 2 - 1));
+  const m = l/100 - c/2;
+  let r,g,b;
+  if (h < 1/6) { r=c; g=x; b=0; }
+  else if (h < 2/6) { r=x; g=c; b=0; }
+  else if (h < 3/6) { r=0; g=c; b=x; }
+  else if (h < 4/6) { r=0; g=x; b=c; }
+  else if (h < 5/6) { r=x; g=0; b=c; }
+  else { r=c; g=0; b=x; }
+  const toHex = v => ('0' + Math.round((v + m) * 255).toString(16)).slice(-2);
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
 const BOT_ADJECTIVES = ['Swift','Crimson','Azure','Lunar','Solar','Nebula','Quantum','Silent','Iron','Golden','Shadow','Hyper','Cosmic','Turbo','Electric','Frost','Ember','Phantom','Rapid','Vivid'];
 const BOT_NOUNS = ['Falcon','Comet','Viper','Ranger','Warden','Nova','Specter','Rogue','Pioneer','Sentinel','Echo','Blazer','Meteor','Drifter','Guardian','Hunter','Pilot','Reactor','Striker','Voyager'];
 
@@ -104,6 +143,7 @@ function createBotPlayer() {
   return {
     id,
     name: generateBotName(existing),
+  color: assignPlayerColor(),
     position,
     velocity,
     rotation: Math.random()*360,
@@ -1365,6 +1405,7 @@ io.on('connection', (socket) => {
     const newPlayer = {
       id: socket.id,
       name: playerName,
+  color: assignPlayerColor(),
       position: { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 },
       velocity: { x: 0, y: 0 },
       rotation: 0,
@@ -1446,7 +1487,7 @@ setInterval(() => {
   const objectCount = Object.values(objectCounts).reduce((a,b)=>a+b,0);
   // Build a serializable shallow snapshot (avoid leaking pooled object references / unexpected props)
   const snapshot = {
-    players: gameState.players.map(p=>({ id:p.id,name:p.name,position:p.position,velocity:p.velocity,rotation:p.rotation,score:p.score,highScore:p.highScore,dead:p.dead,deathPosition:p.deathPosition,invulnerable:p.invulnerable,activePowerups:p.activePowerups || {} })),
+  players: gameState.players.map(p=>({ id:p.id,name:p.name,color:p.color,position:p.position,velocity:p.velocity,rotation:p.rotation,score:p.score,highScore:p.highScore,dead:p.dead,deathPosition:p.deathPosition,invulnerable:p.invulnerable,activePowerups:p.activePowerups || {} })),
     asteroids: gameState.asteroids.map(a=>({ id:a.id,position:a.position,velocity:a.velocity,radius:a.radius,angle:a.angle,spin:a.spin })),
     ufos: gameState.ufos.map(u=>({ id:u.id, position:u.position, velocity:u.velocity, radius:u.radius, exploding:u.exploding, explosionTimer:u.explosionTimer })),
   bullets: gameState.bullets.map(b=>({ id:b.id, position:b.position, velocity:b.velocity, radius:b.radius, playerId:b.playerId, lifeTime:b.lifeTime, bouncing:!!b.bouncing, homing:!!b.homing })),

@@ -234,42 +234,38 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
     context.strokeRect(0, 0, 3000, 2000);
 
     // Draw players (skip drawing ship geometry if dead so debris is visible)
-  renderState.players.forEach(player => {
-      
+    renderState.players.forEach(player => {
+      const shipColor = player.color || '#CCCCCC';
       context.save();
       context.translate(player.position.x, player.position.y);
       context.rotate(player.rotation * Math.PI / 180);
-      
-      const isMe = player.id === playerIdRef.current;
-      context.strokeStyle = isMe ? '#00FFFF' : '#FFFF00';
+      context.strokeStyle = shipColor;
       context.lineWidth = 2;
-      
-  // Draw ship
       context.beginPath();
       context.moveTo(0, -10);
       context.lineTo(-8, 10);
       context.lineTo(0, 5);
       context.lineTo(8, 10);
       context.closePath();
-  if (!player.dead) context.stroke();
-      
+      if (!player.dead) context.stroke();
       context.restore();
-      
-      // Draw player name (locked horizontal above ship)
+      // Name label
       context.save();
       context.translate(player.position.x, player.position.y);
-      context.fillStyle = isMe ? '#00FFFF' : '#FFFF00';
+      context.fillStyle = shipColor;
       context.font = '12px Arial';
       context.textAlign = 'center';
       context.fillText(player.name, 0, -20);
       context.restore();
     });
 
-    // Draw bullets
-  renderState.bullets.forEach(bullet => {
+    // Draw bullets (match owning player's color; keep bouncing same color, just larger radius already handled server side)
+    renderState.bullets.forEach(bullet => {
+      const owner = renderState.players.find(p => p.id === bullet.playerId);
+      const color = owner && owner.color ? owner.color : '#FFFFFF';
       context.save();
       context.translate(bullet.position.x, bullet.position.y);
-      context.fillStyle = bullet.bouncing ? '#00FFFF' : '#FFFFFF';
+      context.fillStyle = color;
       context.beginPath();
       context.arc(0, 0, bullet.radius, 0, 2 * Math.PI);
       context.fill();
@@ -305,13 +301,13 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
         context.translate(powerup.position.x, powerup.position.y);
         
         const colors = {
-          rapidFire: '#00FFFF',
-          invulnerability: '#FFFF00',
-          spreadShot: '#FF00FF',
-          homingShot: '#00FF00',
-          speedUp: '#FFA500',
-          powerShot: '#FF0000',
-          bouncingBullets: '#00FFFF',
+          rapidFire: '#00E5FF',       // bright cyan
+          invulnerability: '#F2FF00', // vivid yellow
+          spreadShot: '#C070FF',      // lavender
+          homingShot: '#00FF7A',      // spring green
+          speedUp: '#00B0FF',         // sky blue
+          powerShot: '#FF8C00',       // orange (still non-red)
+          bouncingBullets: '#7DFFB5', // mint
         };
         
         context.strokeStyle = colors[powerup.type] || '#FFFFFF';
@@ -472,7 +468,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
       let y = 142;
       sortedPlayers.slice(0, rows).forEach(p => {
         const isMe = p.id === playerIdRef.current;
-        context.fillStyle = isMe ? '#00FFFF' : '#FFFFFF';
+        context.fillStyle = p.color || (isMe ? '#FFFFFF' : '#AAAAAA');
         const name = p.name || 'Player';
         context.fillText(name, (canvas.width-boxWidth)/2 + 14, y);
         context.textAlign = 'right';

@@ -13,14 +13,15 @@ export default class Powerup {
     this.flashDuration = 5 * 60; // Flash for last 5 seconds (unchanged)
 
     // Visual properties based on type
+    // Unique non-red colors (avoid hues suggesting hostile bullets)
     const properties = {
-      rapidFire: { letter: 'R', color: '#00FFFF' },
-      invulnerability: { letter: 'I', color: '#FFFF00' },
-      spreadShot: { letter: 'SS', color: '#FF00FF' },
-      homingShot: { letter: 'H', color: '#00FF00' },
-      speedUp: { letter: 'P', color: '#FFA500' },
-      powerShot: { letter: 'PS', color: '#FF0000' },
-      bouncingBullets: { letter: 'BB', color: '#00FFFF' },
+      rapidFire: { letter: 'R',  color: '#00E5FF' }, // bright cyan
+      invulnerability: { letter: 'I', color: '#F2FF00' }, // vivid yellow
+      spreadShot: { letter: 'SS', color: '#C070FF' }, // lavender
+      homingShot: { letter: 'H', color: '#00FF7A' }, // spring green
+      speedUp: { letter: 'P', color: '#00B0FF' }, // sky blue
+      powerShot: { letter: 'PS', color: '#FF8C00' }, // orange (distinct from red)
+      bouncingBullets: { letter: 'BB', color: '#7DFFB5' }, // mint
     };
     this.visuals = properties[this.type];
   }
