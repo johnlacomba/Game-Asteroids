@@ -78,6 +78,7 @@ const getUFOPolygon = (ufo) => {
   ];
 };
 
+
 // Helper to create a meandering UFO path fully inside borders
 // Helper to pick a random point on the border (excluding corners by a small inset)
 const randomBorderPoint = () => {
@@ -115,8 +116,8 @@ const createUFO = () => {
   // Keep amplitude smaller so sinusoidal oscillation does not leave map
   const amplitude = 80 + Math.random() * 80;
   const frequency = 0.8 + Math.random() * 1.0;
-  // Speed tuned to traverse path in ~10-14s
-  const speed = (0.0009 + Math.random() * 0.0005) * (800 / length); // normalize so long paths not too long
+  // Increased base speed (faster traversal ~5-8s)
+  const speed = (0.0016 + Math.random() * 0.0007) * (800 / length); // normalize so long paths not too long
   return {
     id: `ufo_${Date.now()}_${Math.random()}`,
     start,
@@ -851,6 +852,11 @@ const updateGameState = () => {
 
   // Update UFOs (meandering path)
   gameState.ufos = gameState.ufos.filter(ufo => {
+    if (ufo.exploding) {
+      ufo.explosionTimer--;
+      if (ufo.explosionTimer <= 0) return false;
+      return true; // keep until timer finishes (position frozen)
+    }
     // Advance along path; speed is already per-frame fraction of full path
     ufo.progress += ufo.speed; 
     if (ufo.progress >= 1) return false; // terminate exactly at border end
@@ -896,12 +902,15 @@ const updateGameState = () => {
     const bulletCircle = { x: bullet.position.x, y: bullet.position.y, radius: bullet.radius };
     for (let j = gameState.ufos.length - 1; j >= 0; j--) {
       const ufo = gameState.ufos[j];
+    if (ufo.exploding) continue;
       const ufoPoly = getUFOPolygon(ufo);
       if (checkCirclePolygonCollision(bulletCircle, ufoPoly)) {
         if (!bullet.bouncing) gameState.bullets.splice(i, 1);
         ufo.health -= 1;
         if (ufo.health <= 0) {
-          gameState.ufos.splice(j, 1);
+      // Start explosion state instead of immediate removal
+      ufo.exploding = true;
+      ufo.explosionTimer = 45; // 0.75s
         }
         break;
       }
@@ -914,6 +923,7 @@ const updateGameState = () => {
     const playerPoly = getShipPolygon({ x: player.position.x, y: player.position.y, rotation: player.rotation });
     for (let j = gameState.ufos.length - 1; j >= 0; j--) {
       const ufo = gameState.ufos[j];
+      if (ufo.exploding) continue;
       const ufoPoly = getUFOPolygon(ufo);
       if (checkPolygonCollision(playerPoly, ufoPoly)) {
         if (!player.dead) {
@@ -923,6 +933,9 @@ const updateGameState = () => {
           player.respawnTimer = 120;
           player.velocity = { x: 0, y: 0 };
         }
+        // Also destroy UFO in collision
+        ufo.exploding = true;
+        ufo.explosionTimer = 45;
         break;
       }
     }

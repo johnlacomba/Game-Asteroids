@@ -22,6 +22,9 @@ const MultiplayerGame = ({ onBackToTitle }) => {
   // Debris per player id
   const debrisMapRef = useRef(new Map()); // id -> array of Debris
   const prevDeadRef = useRef(new Map()); // id -> boolean
+  // UFO explosion debris
+  const ufoDebrisMapRef = useRef(new Map()); // ufoId -> Debris[]
+  const processedExplodingUFORef = useRef(new Set());
 
   const getAsteroidInstance = (asteroidData) => {
     const key = asteroidData.id;
@@ -304,11 +307,43 @@ const MultiplayerGame = ({ onBackToTitle }) => {
       }
     });
 
-    // Draw UFOs via component
+    // Draw UFOs & spawn explosion debris when exploding
     if (gameState.ufos) {
       gameState.ufos.forEach(ufoData => {
-        const ufoInst = getUFOInstance(ufoData);
-        ufoInst.draw(context);
+        if (ufoData.exploding) {
+          if (!processedExplodingUFORef.current.has(ufoData.id)) {
+            // Create debris pieces similar to ship but with more segments
+            const r = ufoData.radius || 15;
+            const segments = [];
+            // Rectangle points (relative)
+            const p1 = { x: -r, y: -r/2 };
+            const p2 = { x: r, y: -r/2 };
+            const p3 = { x: r/2, y: r/2 };
+            const p4 = { x: -r/2, y: r/2 };
+            // Edge segments
+            segments.push([p1, p2], [p2, p3], [p3, p4], [p4, p1]);
+            // Diagonals / interior breakup
+            segments.push([p1, p3], [p2, p4]);
+            // Dome approximation (top arc broken into 3 small chords)
+            const domeA = { x: -r * 0.6, y: -r/2 };
+            const domeB = { x: 0, y: -r * 0.8 };
+            const domeC = { x: r * 0.6, y: -r/2 };
+            segments.push([domeA, domeB], [domeB, domeC]);
+            // Smaller interior cross
+            segments.push([{ x: -r/2, y: 0 }, { x: r/2, y: 0 }]);
+            // Create Debris pieces
+            const debrisPieces = segments.map(seg => new Debris({
+              position: { x: ufoData.position.x, y: ufoData.position.y },
+              shape: seg
+            }));
+            ufoDebrisMapRef.current.set(ufoData.id, debrisPieces);
+            processedExplodingUFORef.current.add(ufoData.id);
+          }
+          // Do not draw intact UFO while exploding; debris will render below
+        } else {
+          const ufoInst = getUFOInstance(ufoData);
+          ufoInst.draw(context);
+        }
       });
     }
 
@@ -338,6 +373,17 @@ const MultiplayerGame = ({ onBackToTitle }) => {
       pieces.forEach(piece => { piece.update(); piece.draw(context); });
       const remaining = pieces.filter(p => !p.delete);
       if (remaining.length === 0) debrisMapRef.current.delete(pid); else debrisMapRef.current.set(pid, remaining);
+    });
+
+    // Update & draw UFO explosion debris
+    ufoDebrisMapRef.current.forEach((pieces, uid) => {
+      pieces.forEach(piece => { piece.update(); piece.draw(context); });
+      const remaining = pieces.filter(p => !p.delete);
+      if (remaining.length === 0) {
+        ufoDebrisMapRef.current.delete(uid);
+      } else {
+        ufoDebrisMapRef.current.set(uid, remaining);
+      }
     });
 
     context.restore();
