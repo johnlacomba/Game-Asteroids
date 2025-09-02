@@ -21,6 +21,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName, serverAddress, isHost }) =
   const rotationRef = useRef(0);
   const showScoreboardRef = useRef(false);
   const scoreboardHitRegionsRef = useRef([]); // store clickable scoreboard buttons (bot remove, add bot)
+  const followedPlayerIdRef = useRef(null); // camera follow target (other player)
   
   // Cache for asteroid & UFO instances
   const asteroidInstancesRef = useRef(new Map());
@@ -240,12 +241,18 @@ const MultiplayerGame = ({ onBackToTitle, playerName, serverAddress, isHost }) =
     context.fillStyle = 'black';
     context.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Set up camera
+    // Set up camera (optionally follow another player selected from scoreboard)
     context.save();
-  // If dead, lock camera on death position
-  const camTarget = (myPlayer.dead && myPlayer.deathPosition) ? myPlayer.deathPosition : myPlayer.position;
-  const cameraX = camTarget.x - canvas.width / 2;
-  const cameraY = camTarget.y - canvas.height / 2;
+    let followed = null;
+    if (followedPlayerIdRef.current && renderState.players) {
+      followed = renderState.players.find(p => p.id === followedPlayerIdRef.current) || null;
+      // Auto-cancel if target disappeared
+      if (!followed) followedPlayerIdRef.current = null;
+    }
+    const cameraPlayer = followed || myPlayer;
+    const camTarget = (cameraPlayer.dead && cameraPlayer.deathPosition) ? cameraPlayer.deathPosition : cameraPlayer.position;
+    const cameraX = camTarget.x - canvas.width / 2;
+    const cameraY = camTarget.y - canvas.height / 2;
     context.translate(-cameraX, -cameraY);
 
     // Draw stars
@@ -500,7 +507,8 @@ const MultiplayerGame = ({ onBackToTitle, playerName, serverAddress, isHost }) =
       const rowHeight = 22;
       const headerHeight = 30;
       const rows = Math.min(sortedPlayers.length, 25);
-      const boxHeight = headerHeight + rows*rowHeight + 12;
+      const instructionsHeight = 18; // extra space for instructions line
+      const boxHeight = headerHeight + rows*rowHeight + 12 + instructionsHeight;
       context.save();
       context.globalAlpha = 0.85;
       context.fillStyle = '#000';
@@ -539,6 +547,12 @@ const MultiplayerGame = ({ onBackToTitle, playerName, serverAddress, isHost }) =
         context.textAlign = 'right';
         context.fillText(String(p.highScore || 0), (canvas.width+boxWidth)/2 - 14, y);
         context.textAlign = 'left';
+        // Click region for following this player (avoid overlapping with score / remove bot button area)
+        const nameRegionX = (canvas.width - boxWidth)/2 + 10;
+        const nameRegionY = y - 16; // approximate row top (baseline - ascent)
+        const nameRegionW = boxWidth - 120; // leave room for score + buttons
+        const nameRegionH = rowHeight;
+        scoreboardHitRegionsRef.current.push({ x: nameRegionX, y: nameRegionY, w: nameRegionW, h: nameRegionH, action: 'followPlayer', playerId: p.id });
         // Draw remove button for bots
         if (p.isBot) {
           const btnX = (canvas.width+boxWidth)/2 - 80; // shifted further left to avoid score overlap
@@ -556,6 +570,13 @@ const MultiplayerGame = ({ onBackToTitle, playerName, serverAddress, isHost }) =
         y += rowHeight;
       });
       context.restore();
+  // Instructions line (always at bottom of box)
+  context.save();
+  context.font = '11px Arial';
+  context.fillStyle = '#BBBBBB';
+  context.textAlign = 'center';
+  context.fillText('Click a player name to follow (Esc to stop)', canvas.width/2, 100 + boxHeight - 8);
+  context.restore();
     }
 
     // Draw UFO warning
@@ -564,6 +585,19 @@ const MultiplayerGame = ({ onBackToTitle, playerName, serverAddress, isHost }) =
       context.font = 'bold 36px Arial';
       context.textAlign = 'center';
       context.fillText('UFO SWARM INCOMING!', canvas.width / 2, 100);
+    }
+
+    // Follow overlay (when camera locked to another player)
+    if (followedPlayerIdRef.current && followedPlayerIdRef.current !== playerIdRef.current && renderState.players) {
+      const target = renderState.players.find(p => p.id === followedPlayerIdRef.current);
+      if (target) {
+        context.save();
+        context.font = '14px Arial';
+        context.fillStyle = '#CCCCCC';
+        context.textAlign = 'center';
+        context.fillText(`Following ${target.name} (Esc to stop)`, canvas.width/2, 70);
+        context.restore();
+      }
     }
 
 
@@ -580,7 +614,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName, serverAddress, isHost }) =
   }, [gameLoop]);
 
   useEffect(() => {
-    // Mouse click handler for scoreboard remove bot buttons
+    // Mouse click handler for scoreboard actions (remove/add bot, follow player)
     const handleClick = (e) => {
       if (!showScoreboardRef.current) return;
       const canvas = canvasRef.current;
@@ -596,6 +630,11 @@ const MultiplayerGame = ({ onBackToTitle, playerName, serverAddress, isHost }) =
               socketRef.current.emit('removeBot', region.botId);
             } else if (region.action === 'addBot') {
               socketRef.current.emit('addBot');
+            } else if (region.action === 'followPlayer' && region.playerId) {
+              // Only follow if not myself
+              if (region.playerId !== playerIdRef.current) {
+                followedPlayerIdRef.current = region.playerId;
+              }
             }
           }
           break;
@@ -608,7 +647,16 @@ const MultiplayerGame = ({ onBackToTitle, playerName, serverAddress, isHost }) =
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && onBackToTitle) onBackToTitle();
+      if (e.key === 'Escape') {
+        // If currently following someone else, stop following; else exit to title
+        if (followedPlayerIdRef.current && followedPlayerIdRef.current !== playerIdRef.current) {
+          followedPlayerIdRef.current = null;
+          return; // do not exit game
+        } else if (onBackToTitle) {
+          onBackToTitle();
+          return;
+        }
+      }
       if (e.key === 'Tab') { e.preventDefault(); showScoreboardRef.current = true; }
     };
     const handleKeyUp = (e) => {
