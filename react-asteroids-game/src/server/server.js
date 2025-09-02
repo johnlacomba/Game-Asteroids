@@ -56,6 +56,21 @@ let globalLeader = null;
 const BOT_PREFIX = 'BOT_';
 let nextBotId = 1;
 
+const BOT_ADJECTIVES = ['Swift','Crimson','Azure','Lunar','Solar','Nebula','Quantum','Silent','Iron','Golden','Shadow','Hyper','Cosmic','Turbo','Electric','Frost','Ember','Phantom','Rapid','Vivid'];
+const BOT_NOUNS = ['Falcon','Comet','Viper','Ranger','Warden','Nova','Specter','Rogue','Pioneer','Sentinel','Echo','Blazer','Meteor','Drifter','Guardian','Hunter','Pilot','Reactor','Striker','Voyager'];
+
+function generateBotName(existingNames) {
+  for (let attempts = 0; attempts < 20; attempts++) {
+    const adj = BOT_ADJECTIVES[Math.floor(Math.random()*BOT_ADJECTIVES.length)];
+    const noun = BOT_NOUNS[Math.floor(Math.random()*BOT_NOUNS.length)];
+    const base = `${adj} ${noun}`;
+    const name = existingNames.has(base) ? `${base} ${Math.floor(Math.random()*100)}` : base;
+    const finalName = `${name} (Bot)`;
+    if (!existingNames.has(finalName)) return finalName;
+  }
+  return `Bot ${Math.floor(Math.random()*1000)} (Bot)`; // fallback
+}
+
 function recomputeLeader() {
   globalLeader = null;
   for (const p of gameState.players) {
@@ -85,9 +100,10 @@ function createBotPlayer() {
   // Reuse spawn logic near center with some randomization
   const position = { x: WORLD_WIDTH / 2 + (Math.random()*200-100), y: WORLD_HEIGHT / 2 + (Math.random()*200-100) };
   const velocity = { x: 0, y: 0 };
+  const existing = new Set(gameState.players.map(p=>p.name));
   return {
     id,
-    name: 'Bot',
+    name: generateBotName(existing),
     position,
     velocity,
     rotation: Math.random()*360,
