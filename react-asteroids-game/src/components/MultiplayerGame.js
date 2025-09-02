@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import io from 'socket.io-client';
 import { handleInput, cleanup } from '../core/inputController';
+import { getJoystickVector } from '../core/mobileInput';
 import Asteroid from './Asteroid';
 import UFO from './UFO';
 import Debris from './Debris';
@@ -189,6 +190,18 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
       rotationRef.current += 5;
     }
 
+    // Joystick aim support
+    let joy = { x: 0, y: 0 };
+    try { joy = getJoystickVector(); } catch (e) {}
+    const joyMag = Math.hypot(joy.x, joy.y);
+    if (joyMag > 0.05) {
+      const desired = Math.atan2(joy.x, -joy.y) * 180 / Math.PI; // matches Player.js mapping
+      let delta = desired - rotationRef.current;
+      delta = ((delta + 180) % 360 + 360) % 360 - 180;
+      const step = Math.sign(delta) * Math.min(Math.abs(delta), 5);
+      rotationRef.current += step;
+    }
+
     rotationRef.current = ((rotationRef.current % 360) + 360) % 360;
 
     // Always send input every frame, don't check if it changed
@@ -202,6 +215,8 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
       },
       rotation: rotationRef.current
     };
+  currentInput.keys.w = (joyMag > 0.1) || keys.w || false;
+  currentInput.keys.s = (! (joyMag > 0.1) && keys.s) || false;
     
     socketRef.current.emit('playerInput', currentInput);
 

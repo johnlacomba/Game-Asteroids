@@ -102,19 +102,42 @@ export default class Player {
     const speedMultiplier = speedUpPowerup ? 1.5 ** speedUpPowerup.stack : 1; // Changed from 2 to 1.5
     const currentSpeed = this.speed * speedMultiplier;
 
-    if (keys.a) {
-      this.rotate('LEFT');
-    }
-    if (keys.d) {
-      this.rotate('RIGHT');
-    }
-    if (keys.w) {
-      this.velocity.x -= Math.sin(-this.rotation * Math.PI / 180) * currentSpeed;
-      this.velocity.y -= Math.cos(-this.rotation * Math.PI / 180) * currentSpeed;
-    }
-    if (keys.s) {
-      this.velocity.x += Math.sin(-this.rotation * Math.PI / 180) * (currentSpeed / 2);
-      this.velocity.y += Math.cos(-this.rotation * Math.PI / 180) * (currentSpeed / 2);
+    // Optional joystick vector (mobile analog) injected via global accessor to avoid circular deps
+    let joystickVec = null;
+    try {
+      // Lazy require to prevent bundler issues if unused
+      const { getJoystickVector } = require('../core/mobileInput');
+      joystickVec = getJoystickVector();
+    } catch (e) { /* ignore if not available */ }
+
+    if (joystickVec && (Math.abs(joystickVec.x) > 0.01 || Math.abs(joystickVec.y) > 0.01)) {
+      // Compute desired rotation: ship forward vector corresponds to (sin(rot), -cos(rot))
+      const desired = Math.atan2(joystickVec.x, -joystickVec.y) * 180 / Math.PI; // degrees
+      let delta = desired - this.rotation;
+      // Normalize delta to [-180,180]
+      delta = ((delta + 180) % 360 + 360) % 360 - 180;
+      const step = Math.sign(delta) * Math.min(Math.abs(delta), this.rotationSpeed);
+      this.rotation += step;
+      // Thrust forward proportional to magnitude (simulate holding W)
+      const mag = Math.min(1, Math.hypot(joystickVec.x, joystickVec.y));
+      this.velocity.x -= Math.sin(-this.rotation * Math.PI / 180) * currentSpeed * mag;
+      this.velocity.y -= Math.cos(-this.rotation * Math.PI / 180) * currentSpeed * mag;
+    } else {
+      // Keyboard fallback
+      if (keys.a) {
+        this.rotate('LEFT');
+      }
+      if (keys.d) {
+        this.rotate('RIGHT');
+      }
+      if (keys.w) {
+        this.velocity.x -= Math.sin(-this.rotation * Math.PI / 180) * currentSpeed;
+        this.velocity.y -= Math.cos(-this.rotation * Math.PI / 180) * currentSpeed;
+      }
+      if (keys.s) {
+        this.velocity.x += Math.sin(-this.rotation * Math.PI / 180) * (currentSpeed / 2);
+        this.velocity.y += Math.cos(-this.rotation * Math.PI / 180) * (currentSpeed / 2);
+      }
     }
 
     // Apply inertia

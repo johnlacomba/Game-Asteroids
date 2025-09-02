@@ -1,3 +1,5 @@
+import { getMobileKeys } from './mobileInput';
+
 const keys = {
   w: false,
   s: false,
@@ -78,8 +80,10 @@ export function handleInput() {
     initializeInput();
   }
   
-  // Return a copy to prevent external modification
+  // Merge mobile keys (touch) with keyboard
+  const mobile = getMobileKeys();
   const currentKeys = { ...keys };
+  Object.keys(mobile).forEach(k => { if (mobile[k]) currentKeys[k] = true; });
   
   // Debug: Log current key state every few frames
   // removed random debug logging

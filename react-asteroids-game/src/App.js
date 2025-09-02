@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import MultiplayerGame from './components/MultiplayerGame';
+import MobileControls from './components/MobileControls';
 import TitleScreen from './components/TitleScreen';
 import './index.css';
 
@@ -19,10 +20,16 @@ function App() {
   };
 
   if (gameMode === 'multiplayer') {
-    return <MultiplayerGame onBackToTitle={handleBackToTitle} playerName={playerName} />;
+    return <>
+      <MultiplayerGame onBackToTitle={handleBackToTitle} playerName={playerName} />
+      <MobileControls />
+    </>;
   }
 
-  return <TitleScreen onModeSelect={handleModeSelect} />;
+  return <>
+    <TitleScreen onModeSelect={handleModeSelect} />
+    <MobileControls />
+  </>;
 }
 
 export default App;
