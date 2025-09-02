@@ -34,7 +34,7 @@ const Game = ({ onBackToTitle }) => {
   const BASE_SHOOT_COOLDOWN = 15;
   const WORLD_WIDTH = 3000;
   const WORLD_HEIGHT = 2000;
-  const POWERUP_TYPES = ['rapidFire', 'invulnerability', 'spreadShot', 'homingShot', 'speedUp', 'powerShot', 'bouncingBullets', 'scoreMultiplier'];
+  const POWERUP_TYPES = ['rapidFire', 'shield', 'spreadShot', 'homingShot', 'speedUp', 'powerShot', 'bouncingBullets', 'scoreMultiplier'];
   const POWERUP_THRESHOLD = 5;
   const UFO_SWARM_SIZE = 36;
   const UFO_FLASH_DURATION = 120;
@@ -116,7 +116,7 @@ const Game = ({ onBackToTitle }) => {
     const activatePowerup = (type) => {
       const durations = {
         rapidFire: 30 * 60,
-        invulnerability: 10 * 60,
+  shield: Infinity,
         spreadShot: 30 * 60,
         homingShot: 30 * 60,
         speedUp: 60 * 60,
@@ -287,6 +287,21 @@ const Game = ({ onBackToTitle }) => {
       // Draw player if it has not been destroyed
       if (!currentPlayer.delete) {
         currentPlayer.draw(context);
+        // Shield visual layers (mirror multiplayer implementation)
+        const shield = activePowerupsRef.current.get && activePowerupsRef.current.get('shield');
+        if (shield && shield.stack) {
+          context.save();
+          const layers = Math.min(3, shield.stack);
+            for (let i = 0; i < layers; i++) {
+              context.beginPath();
+              const radius = 16 + i * 5; // base radius just outside ship
+              context.strokeStyle = 'rgba(58,140,255,' + (0.6 - i * 0.15) + ')';
+              context.lineWidth = 2;
+              context.arc(currentPlayer.position.x, currentPlayer.position.y, radius, 0, Math.PI * 2);
+              context.stroke();
+            }
+          context.restore();
+        }
       }
 
       // Update and draw single UFO (legacy mode)
@@ -352,9 +367,13 @@ const Game = ({ onBackToTitle }) => {
       // Draw Active Powerups
       let powerupY = 50;
       activePowerupsRef.current.forEach((powerup, type) => {
-        const seconds = Math.ceil(powerup.duration / 60);
         const stackText = powerup.stack > 1 ? ` (x${powerup.stack})` : '';
-        context.fillText(`${type}${stackText}: ${seconds}s`, 20, powerupY);
+        if (type === 'shield') {
+          context.fillText(`${type}${stackText}`, 20, powerupY);
+        } else {
+          const seconds = Math.ceil(powerup.duration / 60);
+          context.fillText(`${type}${stackText}: ${seconds}s`, 20, powerupY);
+        }
         powerupY += 25;
       });
 
@@ -405,8 +424,13 @@ const Game = ({ onBackToTitle }) => {
         const playerPolygon = currentPlayer.getPolygon();
         ufoBulletsRef.current.forEach(bullet => {
           if (checkCirclePolygonCollision(bullet, playerPolygon)) {
-            if (activePowerupsRef.current.has('invulnerability')) {
+            if (activePowerupsRef.current.has('shield')) {
               bullet.delete = true;
+              const shield = activePowerupsRef.current.get('shield');
+              if (shield) {
+                shield.stack -= 1;
+                if (shield.stack <= 0) activePowerupsRef.current.delete('shield');
+              }
             } else {
               bullet.delete = true;
               debrisRef.current = debrisRef.current.concat(currentPlayer.destroy());
@@ -433,10 +457,12 @@ const Game = ({ onBackToTitle }) => {
         const playerPolygon = currentPlayer.getPolygon();
         asteroidsRef.current.forEach(asteroid => {
           if (checkPolygonCollision(playerPolygon, asteroid.getPolygon())) {
-            if (activePowerupsRef.current.has('invulnerability')) {
+            if (activePowerupsRef.current.has('shield')) {
               const tempV = { ...currentPlayer.velocity };
               currentPlayer.velocity = asteroid.velocity;
               asteroid.velocity = tempV;
+              const shield = activePowerupsRef.current.get('shield');
+              if (shield) { shield.stack -=1; if (shield.stack<=0) activePowerupsRef.current.delete('shield'); }
             } else {
               debrisRef.current = debrisRef.current.concat(currentPlayer.destroy());
               gameOverRef.current = true;
@@ -452,10 +478,12 @@ const Game = ({ onBackToTitle }) => {
         allUfos.forEach(ufo => {
           const ufoPolygon = ufo.getPolygon();
           if (checkPolygonCollision(playerPolygon, ufoPolygon)) {
-            if (activePowerupsRef.current.has('invulnerability')) {
+            if (activePowerupsRef.current.has('shield')) {
               const tempV = { ...currentPlayer.velocity };
               currentPlayer.velocity = ufo.velocity;
               ufo.velocity = tempV;
+              const shield = activePowerupsRef.current.get('shield');
+              if (shield) { shield.stack -=1; if (shield.stack<=0) activePowerupsRef.current.delete('shield'); }
             } else {
               debrisRef.current = debrisRef.current.concat(currentPlayer.destroy());
               gameOverRef.current = true;

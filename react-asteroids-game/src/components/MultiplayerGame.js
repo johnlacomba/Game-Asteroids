@@ -252,6 +252,21 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
       context.lineTo(8, 10);
       context.closePath();
       if (!player.dead) context.stroke();
+      // Shield visuals (uses activePowerups map entries)
+      const shield = player.activePowerups && player.activePowerups.get && player.activePowerups.get('shield');
+      if (!player.dead && shield && shield.stack) {
+        context.save();
+        const layers = Math.min(3, shield.stack);
+        for (let i=0;i<layers;i++) {
+          context.beginPath();
+          const radius = 16 + i*5; // base radius just outside ship
+          context.strokeStyle = 'rgba(58,140,255,' + (0.6 - i*0.15) + ')';
+          context.lineWidth = 2;
+          context.arc(0,0,radius,0,Math.PI*2);
+          context.stroke();
+        }
+        context.restore();
+      }
       context.restore();
       // Name label
       context.save();
@@ -306,7 +321,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
         
         const colors = {
           rapidFire: '#00E5FF',       // bright cyan
-          invulnerability: '#F2FF00', // vivid yellow
+          shield: '#3A8CFF', // blue shield
           spreadShot: '#C070FF',      // lavender
           homingShot: '#00FF7A',      // spring green
           speedUp: '#00B0FF',         // sky blue
@@ -326,7 +341,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
         
         const letters = {
           rapidFire: 'R',
-          invulnerability: 'I',
+          shield: 'SH',
           spreadShot: 'SS',
           homingShot: 'H',
           speedUp: 'P',
@@ -443,9 +458,13 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
   let powerupY = gameState.leader ? 105 : 80;
     if (myPlayer && myPlayer.activePowerups && myPlayer.activePowerups.forEach) {
       myPlayer.activePowerups.forEach((powerup, type) => {
-        const seconds = Math.ceil(powerup.duration / 60);
         const stackText = powerup.stack > 1 ? ` (x${powerup.stack})` : '';
-        context.fillText(`${type}${stackText}: ${seconds}s`, 20, powerupY);
+        if (type === 'shield') {
+          context.fillText(`${type}${stackText}`, 20, powerupY);
+        } else {
+          const seconds = Math.ceil(powerup.duration / 60);
+          context.fillText(`${type}${stackText}: ${seconds}s`, 20, powerupY);
+        }
         powerupY += 25;
       });
     }

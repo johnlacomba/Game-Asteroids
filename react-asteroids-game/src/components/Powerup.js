@@ -16,7 +16,7 @@ export default class Powerup {
     // Unique non-red colors (avoid hues suggesting hostile bullets)
     const properties = {
       rapidFire: { letter: 'R',  color: '#00E5FF' }, // bright cyan
-      invulnerability: { letter: 'I', color: '#F2FF00' }, // vivid yellow
+  shield: { letter: 'SH', color: '#3A8CFF' }, // blue shield
       spreadShot: { letter: 'SS', color: '#C070FF' }, // lavender
       homingShot: { letter: 'H', color: '#00FF7A' }, // spring green
       speedUp: { letter: 'P', color: '#00B0FF' }, // sky blue

@@ -271,7 +271,7 @@ const POWERUP_SPAWN_CHANCE = 0.25; // 25% chance when asteroid is broken - match
 const POWERUP_TYPES = [
   'rapidFire', 
   'spreadShot', 
-  'invulnerability', 
+  'shield', 
   'homingShot', 
   'speedUp', 
   'powerShot', 
@@ -282,7 +282,7 @@ const POWERUP_TYPES = [
 const POWERUP_DURATIONS = {
   rapidFire: 30 * 60,        
   spreadShot: 30 * 60,        
-  invulnerability: 10 * 60,   
+  shield: Infinity,   
   homingShot: 30 * 60,        
   speedUp: 60 * 60,           
   powerShot: 30 * 60,       
@@ -455,11 +455,9 @@ const applyPowerup = (player, powerupType) => {
       player.activePowerups[powerupType].stack += 1;
     }
     // Custom stacking duration behavior for specific powerups
-    if (powerupType === 'invulnerability') {
-      const stack = player.activePowerups[powerupType].stack;
-      // 1st = 10s (unchanged), 2nd -> 20s, 3rd -> 30s
-      const seconds = stack * 10; // stack 1 =>10, 2=>20, 3=>30
-      player.activePowerups[powerupType].duration = seconds * 60;
+    if (powerupType === 'shield') {
+        // Shield duration is infinite; stack increases layers. Keep a large number to avoid special cases.
+        player.activePowerups[powerupType].duration = Infinity;
     } else {
       player.activePowerups[powerupType].duration = POWERUP_DURATIONS[powerupType];
     }
@@ -825,14 +823,10 @@ const updateGameState = () => {
     // Update active powerups
     if (player.activePowerups) {
       Object.keys(player.activePowerups).forEach(type => {
+        if (type === 'shield') return; // no duration decrement
         player.activePowerups[type].duration--;
-        
-        // Remove expired powerups
         if (player.activePowerups[type].duration <= 0) {
-          if (type === 'speedUp') {
-            // Reset speed multiplier when speedUp expires
-            player.speedMultiplier = 1;
-          }
+          if (type === 'speedUp') player.speedMultiplier = 1;
           delete player.activePowerups[type];
         }
       });
@@ -1106,12 +1100,13 @@ const updateGameState = () => {
     return result;
   };
 
-  // Check player-asteroid collisions using spatial grid (powerup invulnerability knocks back)
+  // Check player-asteroid collisions using spatial grid (shield absorbs, else death)
   const playersKnockedThisFrame = new Set();
   gameState.players.forEach(player => {
     if (player.dead) return;
-    const hasPowerupInvuln = !!(player.activePowerups && player.activePowerups.invulnerability);
-    if (player.invulnerable && !hasPowerupInvuln) return; // respawn invuln still pass-through
+  const shieldStacks = player.activePowerups?.shield?.stack || 0;
+  const hasShield = shieldStacks > 0;
+  if (player.invulnerable && !hasShield) return; // respawn invuln still pass-through
     
     const playerForCollision = {
       x: player.position.x,
@@ -1137,7 +1132,7 @@ const updateGameState = () => {
       const asteroidPolygon = getAsteroidPolygon(asteroidForCollision);
       
       if (checkPolygonCollision(playerPolygon, asteroidPolygon)) {
-        if (hasPowerupInvuln) {
+    if (hasShield) {
           if (!playersKnockedThisFrame.has(player.id)) {
             // Momentum transfer: impart player's current velocity into asteroid; damp player.
             const pvx = player.velocity.x || 0; const pvy = player.velocity.y || 0;
@@ -1153,8 +1148,11 @@ const updateGameState = () => {
             player.position.x -= nx * 8; player.position.y -= ny * 8;
             asteroid.position.x += nx * 8; asteroid.position.y += ny * 8;
             playersKnockedThisFrame.add(player.id);
+      // Consume one shield layer
+      player.activePowerups.shield.stack -= 1;
+      if (player.activePowerups.shield.stack <= 0) delete player.activePowerups.shield;
           }
-        } else if (!player.dead && !player.invulnerable) {
+    } else if (!player.dead && !player.invulnerable) {
             player.highScore = Math.max(player.highScore || 0, player.score || 0);
             player.score = 0;
             player.activePowerups = {};
@@ -1354,18 +1352,19 @@ const updateGameState = () => {
     }
   }
 
-  // Player ship polygon vs UFO polygon collisions (powerup invulnerability knocks instead of death)
+  // Player ship polygon vs UFO polygon collisions (shield absorbs once per layer)
   gameState.players.forEach(player => {
     if (player.dead) return;
-    const hasPowerupInvuln = !!(player.activePowerups && player.activePowerups.invulnerability);
-    const playerHasAnyInvuln = player.invulnerable || hasPowerupInvuln;
+  const shieldStacks = player.activePowerups?.shield?.stack || 0;
+  const playerHasShield = shieldStacks > 0;
+  const playerHasAnyInvuln = player.invulnerable || playerHasShield;
     const playerPoly = getShipPolygon({ x: player.position.x, y: player.position.y, rotation: player.rotation });
     for (let j = gameState.ufos.length - 1; j >= 0; j--) {
       const ufo = gameState.ufos[j];
       if (ufo.exploding) continue;
       const ufoPoly = getUFOPolygon(ufo);
       if (checkPolygonCollision(playerPoly, ufoPoly)) {
-        if (!playersKnockedThisFrame.has(player.id)) {
+  if (!playersKnockedThisFrame.has(player.id)) {
           // Strong knock impulse always applied to UFO
           const dx = ufo.position.x - player.position.x;
           const dy = ufo.position.y - player.position.y;
@@ -1388,7 +1387,13 @@ const updateGameState = () => {
           playersKnockedThisFrame.add(player.id);
         }
         // Handle player death if no invulnerability powerup
-        if (!playerHasAnyInvuln && !player.dead) {
+        if (playerHasShield) {
+          if (!playersKnockedThisFrame.has(player.id)) {
+            // Consume shield layer
+            player.activePowerups.shield.stack -= 1;
+            if (player.activePowerups.shield.stack <= 0) delete player.activePowerups.shield;
+          }
+        } else if (!playerHasAnyInvuln && !player.dead) {
           player.highScore = Math.max(player.highScore || 0, player.score || 0);
           player.score = 0;
           player.activePowerups = {};
@@ -1410,23 +1415,28 @@ const updateGameState = () => {
   for (let i = gameState.ufoBullets.length - 1; i >= 0; i--) {
     const bullet = gameState.ufoBullets[i];
     for (const player of gameState.players) {
-  if (player.dead || player.invulnerable || (player.activePowerups && player.activePowerups.invulnerability)) continue;
+      if (player.dead || player.invulnerable) continue; // allow shield to absorb
       const dx = bullet.position.x - player.position.x;
       const dy = bullet.position.y - player.position.y;
       if (dx * dx + dy * dy < (20) * (20)) { // ship approx radius 20
         gameState.ufoBullets.splice(i, 1);
         if (!player.dead) {
-          player.highScore = Math.max(player.highScore || 0, player.score || 0);
-          player.score = 0;
-          player.activePowerups = {};
-          player.speedMultiplier = 1;
-          player.shootTimer = 0;
-          player.dead = true;
-          deadThisFrame.add(player.id);
-          player.deathPosition = { x: player.position.x, y: player.position.y };
-          player.respawnTimer = 120;
-          player.velocity = { x: 0, y: 0 };
-          updateLeaderForPlayer(player);
+          if (player.activePowerups && player.activePowerups.shield && player.activePowerups.shield.stack > 0) {
+            player.activePowerups.shield.stack -= 1;
+            if (player.activePowerups.shield.stack <= 0) delete player.activePowerups.shield;
+          } else {
+            player.highScore = Math.max(player.highScore || 0, player.score || 0);
+            player.score = 0;
+            player.activePowerups = {};
+            player.speedMultiplier = 1;
+            player.shootTimer = 0;
+            player.dead = true;
+            deadThisFrame.add(player.id);
+            player.deathPosition = { x: player.position.x, y: player.position.y };
+            player.respawnTimer = 120;
+            player.velocity = { x: 0, y: 0 };
+            updateLeaderForPlayer(player);
+          }
         }
         break;
       }
