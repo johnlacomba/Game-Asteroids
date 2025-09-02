@@ -1448,11 +1448,14 @@ const updateGameState = () => {
   }
 };
 
+// Track host socket id (first client that declares itself host)
+let hostSocketId = null;
+
 // Socket connection handling
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  socket.on('joinGame', (playerName) => {
+  socket.on('joinGame', (playerName, opts = {}) => {
     const newPlayer = {
       id: socket.id,
       name: playerName,
@@ -1473,6 +1476,10 @@ io.on('connection', (socket) => {
       spacePressed: false
     };
     gameState.players.push(newPlayer);
+    if (opts.isHost && !hostSocketId) {
+      hostSocketId = socket.id;
+      console.log('Host registered:', hostSocketId);
+    }
   updateLeaderForPlayer(newPlayer);
     socket.emit('playerJoined', { playerId: socket.id });
     io.emit('playerCount', gameState.players.length);
@@ -1527,7 +1534,22 @@ io.on('connection', (socket) => {
     }
     io.emit('playerCount', gameState.players.length);
     console.log('User disconnected:', socket.id);
+    if (socket.id === hostSocketId) {
+      console.log('Host disconnected. Server shutting down...');
+      setTimeout(() => process.exit(0), 250);
+    }
   });
+});
+
+// Endpoint to signal host disconnect explicitly (navigator.sendBeacon / fetch keepalive)
+app.post('/hostDisconnect', (req, res) => {
+  if (hostSocketId) {
+    console.log('Host disconnect endpoint called. Shutting down.');
+    res.json({ shuttingDown: true });
+    setTimeout(() => process.exit(0), 250);
+  } else {
+    res.json({ shuttingDown: false, reason: 'No host set' });
+  }
 });
 
 // Initialize game and start loop

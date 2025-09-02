@@ -2,14 +2,34 @@ import React, { useState } from 'react';
 
 const TitleScreen = ({ onModeSelect }) => {
   const [name, setName] = useState('');
-  const [touched, setTouched] = useState(false);
-  const startGame = () => {
-    const finalName = name.trim().slice(0, 20) || 'Player';
-    onModeSelect('multiplayer', finalName);
+  const [address, setAddress] = useState('');
+  const [touchedName, setTouchedName] = useState(false);
+  const [touchedAddr, setTouchedAddr] = useState(false);
+  const [mode, setMode] = useState(null); // 'host' or 'join'
+  const finalName = name.trim().slice(0,20) || 'Player';
+
+  const startHost = async () => {
+    setMode('host');
+    // Attempt to start backend through dev control endpoint (only available in dev).
+    try {
+      await fetch('http://'+window.location.hostname+':5002/start-backend', { method:'POST' });
+    } catch (e) {
+      // ignore errors (likely prod build)
+    }
+  onModeSelect('multiplayer', finalName, { serverAddress: window.location.hostname, isHost: true });
+  };
+  const startJoin = () => {
+    setMode('join');
+    const addr = (address.trim() || window.location.hostname).replace(/^(https?:\/\/)/,'');
+    onModeSelect('multiplayer', finalName, { serverAddress: addr });
   };
   const handleKeyPress = (e) => {
-    if (e.key === '1' || e.key === 'Enter') {
-      startGame();
+    if (e.key === 'Enter') {
+      if (document.activeElement && document.activeElement.id === 'join-address') {
+        startJoin();
+      } else {
+        startHost();
+      }
     }
   };
 
@@ -50,14 +70,13 @@ const TitleScreen = ({ onModeSelect }) => {
         lineHeight: '2',
         marginBottom: '60px'
       }}>
-        <div style={{ marginBottom: '20px' }}>Enter a name & press ENTER</div>
         <input
           type="text"
           value={name}
           onChange={e => setName(e.target.value)}
-          onBlur={() => setTouched(true)}
+          onBlur={() => setTouchedName(true)}
           maxLength={20}
-          placeholder="Your name"
+          placeholder="Enter a name"
           style={{
             padding: '12px 16px',
             marginBottom: '25px',
@@ -70,23 +89,81 @@ const TitleScreen = ({ onModeSelect }) => {
             width: '320px',
             letterSpacing: '1px'
           }}
-          onKeyDown={e => { if (e.key === 'Enter') startGame(); }}
+          onKeyDown={handleKeyPress}
         />
-        {touched && name.trim().length === 0 && (
+        {touchedName && name.trim().length === 0 && (
           <div style={{ color: '#FF6666', fontSize: '14px', marginBottom: '10px' }}>Name optional (defaults to Player)</div>
         )}
-        <div style={{ 
-          padding: '28px 32px',
-          border: '2px solid #00FF00',
-          backgroundColor: 'rgba(0, 255, 0, 0.12)',
-          cursor: 'pointer',
-          fontSize: '28px'
-        }}
-        onClick={startGame}>
-          <strong>M U L T I P L A Y E R</strong>
-          <div style={{ fontSize: '16px', color: '#CCCCCC', marginTop: '12px', letterSpacing: '1px' }}>
-            Server authoritative Asteroids with power-ups & UFOs
+    <div style={{ position:'relative', width:'480px', maxWidth:'92vw', margin:'0 auto 10px', userSelect:'none' }}>
+          {/* Host Button (Top Half) */}
+      <div
+            onClick={startHost}
+            style={{
+              position:'relative',
+              height:'90px',
+              cursor:'pointer',
+              background:'rgba(0,255,0,0.12)',
+              border:'2px solid #00FF00',
+              boxShadow:'0 0 14px #00FF0033',
+              display:'flex',
+              alignItems:'center',
+              justifyContent:'center',
+              transition:'background 0.25s'
+            }}
+            onMouseEnter={e=>{e.currentTarget.style.background='rgba(0,255,0,0.22)';}}
+            onMouseLeave={e=>{e.currentTarget.style.background='rgba(0,255,0,0.12)';}}
+          >
+            <div style={{ textAlign:'center', padding:'0 26px' }}>
+              <div style={{ fontSize:'34px', fontWeight:700, letterSpacing:'3px', textShadow:'0 0 10px #00FF00' }}>HOST GAME</div>
+            </div>
           </div>
+          {/* Join Button (Bottom Half) */}
+      <div
+            onClick={startJoin}
+            style={{
+              position:'relative',
+              height:'90px',
+              marginTop:'18px', // gap between rectangles
+              cursor:'pointer',
+              background:'rgba(0,162,255,0.12)',
+              border:'2px solid #00A2FF',
+              boxShadow:'0 0 14px #00A2FF33',
+              display:'flex',
+              alignItems:'center',
+              justifyContent:'center',
+              transition:'background 0.25s'
+            }}
+            onMouseEnter={e=>{e.currentTarget.style.background='rgba(0,162,255,0.22)';}}
+            onMouseLeave={e=>{e.currentTarget.style.background='rgba(0,162,255,0.12)';}}
+          >
+            <div style={{ textAlign:'center', padding:'0 26px' }}>
+              <div style={{ fontSize:'34px', fontWeight:700, letterSpacing:'3px', textShadow:'0 0 10px #00A2FF' }}>JOIN GAME</div>
+            </div>
+          </div>
+        </div>
+        <div style={{ marginTop:'32px', display:'flex', flexDirection:'column', alignItems:'center' }}>
+          <input
+            id="join-address"
+            type="text"
+            value={address}
+            onChange={e=>setAddress(e.target.value)}
+            onBlur={()=>setTouchedAddr(true)}
+            placeholder="Remote Host (leave blank for localhost)"
+            style={{
+              padding:'10px 14px',
+              background:'#111',
+              color:'#FFF',
+              border:'2px solid #0077FF',
+              borderRadius:4,
+              fontSize:16,
+              width:'320px',
+              textAlign:'center'
+            }}
+            onKeyDown={e=>{ if(e.key==='Enter') startJoin(); }}
+          />
+          {touchedAddr && address.trim().length===0 && (
+            <div style={{ color:'#888', fontSize:12, marginTop:6 }}>Blank = this device</div>
+          )}
         </div>
       </div>
       
@@ -96,7 +173,7 @@ const TitleScreen = ({ onModeSelect }) => {
         textAlign: 'center',
         lineHeight: '1.5'
       }}>
-  Press <strong>Enter</strong> (or click) to begin Multiplayer
+  Press <strong>Enter</strong> to Host (focus on name). Focus IP field + Enter to Join.
       </div>
       
       {/* Animated stars background */}

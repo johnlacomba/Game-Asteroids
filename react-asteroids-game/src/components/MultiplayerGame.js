@@ -6,7 +6,7 @@ import Asteroid from './Asteroid';
 import UFO from './UFO';
 import Debris from './Debris';
 
-const MultiplayerGame = ({ onBackToTitle, playerName }) => {
+const MultiplayerGame = ({ onBackToTitle, playerName, serverAddress, isHost }) => {
   const canvasRef = useRef(null);
   const socketRef = useRef(null);
   const playerIdRef = useRef(null);
@@ -72,14 +72,14 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
   // Initialize socket connection
   useEffect(() => {
   // Dynamic base URL for LAN: use current hostname; assume server port 5001 unless overridden
-  const host = window.location.hostname;
+  const host = serverAddress || window.location.hostname;
   const port = 5001; // keep in sync with server PORT
   socketRef.current = io(`http://${host}:${port}`);
 
     socketRef.current.on('connect', () => {
       setConnected(true);
       const finalName = (playerName && playerName.trim().slice(0,20)) || `Player ${Math.floor(Math.random() * 1000)}`;
-      socketRef.current.emit('joinGame', finalName);
+      socketRef.current.emit('joinGame', finalName, { isHost: !!isHost });
     });
 
     socketRef.current.on('playerJoined', (data) => {
@@ -131,13 +131,22 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
 
   // removed bulletDiag and bulletReplicated handlers
 
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
+    const handleUnload = () => {
+      if (isHost) {
+        try { navigator.sendBeacon && navigator.sendBeacon(`http://${host}:${port}/hostDisconnect`); } catch(e) {}
       }
-      cleanup();
     };
-  }, []);
+    window.addEventListener('beforeunload', handleUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      if (socketRef.current) socketRef.current.disconnect();
+      cleanup();
+      if (isHost) {
+        // Secondary attempt if component unmounts without beforeunload
+        try { fetch(`http://${host}:${port}/hostDisconnect`, { method:'POST', keepalive:true }); } catch(e) {}
+      }
+    };
+  }, [playerName, serverAddress, isHost]);
 
   // Input and rendering loop
   const gameLoop = useCallback(() => {
