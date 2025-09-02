@@ -52,6 +52,9 @@ function releaseAsteroid(a) {
 
 // Track global leader (updated only on score/highScore changes or player add/remove)
 let globalLeader = null;
+// Bot configuration
+const BOT_PREFIX = 'BOT_';
+let nextBotId = 1;
 
 function recomputeLeader() {
   globalLeader = null;
@@ -75,6 +78,128 @@ function updateLeaderForPlayer(player) {
       globalLeader.best = best; // sync name changes or improvements
     }
   }
+}
+
+function createBotPlayer() {
+  const id = `${BOT_PREFIX}${nextBotId++}`;
+  // Reuse spawn logic near center with some randomization
+  const position = { x: WORLD_WIDTH / 2 + (Math.random()*200-100), y: WORLD_HEIGHT / 2 + (Math.random()*200-100) };
+  const velocity = { x: 0, y: 0 };
+  return {
+    id,
+    name: 'Bot',
+    position,
+    velocity,
+    rotation: Math.random()*360,
+    score: 0,
+    highScore: 0,
+    activePowerups: {},
+    speedMultiplier: 1,
+    shootTimer: 0,
+    spacePressed: false,
+    dead: false,
+    invulnerable: true,
+    invulnTimer: 120,
+    isBot: true
+  };
+}
+
+function updateBotAI(bot) {
+  if (bot.dead) return;
+  // Basic timers
+  if (bot.invulnerable) {
+    bot.invulnTimer--;
+    if (bot.invulnTimer <= 0) bot.invulnerable = false;
+  }
+  // Select nearest target (UFO prioritized, else asteroid)
+  let target = null;
+  let targetType = null;
+  let bestDist = Infinity;
+  gameState.ufos.forEach(u => {
+    if (u.exploding) return;
+    const dx = u.position.x - bot.position.x;
+    const dy = u.position.y - bot.position.y;
+    const d = dx*dx + dy*dy;
+    if (d < bestDist) { bestDist = d; target = u; targetType = 'ufo'; }
+  });
+  if (!target) {
+    gameState.asteroids.forEach(a => {
+      const dx = a.position.x - bot.position.x;
+      const dy = a.position.y - bot.position.y;
+      const d = dx*dx + dy*dy;
+      if (d < bestDist) { bestDist = d; target = a; targetType = 'asteroid'; }
+    });
+  }
+  // Avoid threats (UFO bullets, asteroids, UFOs) by steering opposite if close
+  let avoidVec = { x: 0, y: 0 };
+  const addAvoid = (dx, dy, weight) => { avoidVec.x -= dx * weight; avoidVec.y -= dy * weight; };
+  gameState.ufoBullets.forEach(b => {
+    const dx = b.position.x - bot.position.x;
+    const dy = b.position.y - bot.position.y;
+    const d2 = dx*dx + dy*dy;
+    if (d2 < 200*200) addAvoid(dx, dy, 1/(d2+1));
+  });
+  gameState.asteroids.forEach(a => {
+    const dx = a.position.x - bot.position.x;
+    const dy = a.position.y - bot.position.y;
+    const d2 = dx*dx + dy*dy;
+    const range = 140 + a.radius;
+    if (d2 < range*range) addAvoid(dx, dy, 0.5/(d2+1));
+  });
+  gameState.ufos.forEach(u => {
+    const dx = u.position.x - bot.position.x;
+    const dy = u.position.y - bot.position.y;
+    const d2 = dx*dx + dy*dy;
+    if (d2 < 250*250) addAvoid(dx, dy, 0.7/(d2+1));
+  });
+  // Normalize avoidance
+  const avLen = Math.hypot(avoidVec.x, avoidVec.y);
+  if (avLen > 0) { avoidVec.x/=avLen; avoidVec.y/=avLen; }
+  // Desired direction: avoidance first, else target pursuit
+  let desiredDir = null;
+  if (avLen > 0.1) {
+    desiredDir = avoidVec;
+  } else if (target) {
+    desiredDir = { x: (target.position.x - bot.position.x), y: (target.position.y - bot.position.y) };
+    const dl = Math.hypot(desiredDir.x, desiredDir.y) || 1;
+    desiredDir.x/=dl; desiredDir.y/=dl;
+  }
+  if (desiredDir) {
+    const targetAngle = Math.atan2(desiredDir.y, desiredDir.x) * 180 / Math.PI + 90; // ship faces up
+    let diff = ((targetAngle - bot.rotation + 540) % 360) - 180;
+    const turnRate = 4; // deg per frame
+    if (diff > turnRate) diff = turnRate; else if (diff < -turnRate) diff = -turnRate;
+    bot.rotation = (bot.rotation + diff + 360) % 360;
+    // Thrust if moving toward target or evading
+    const radians = (bot.rotation - 90) * Math.PI / 180;
+    bot.velocity.x += Math.cos(radians) * 0.12;
+    bot.velocity.y += Math.sin(radians) * 0.12;
+  }
+  // Fire if target roughly in front and cooldown ready
+  if (target) {
+    const toTarget = Math.atan2(target.position.y - bot.position.y, target.position.x - bot.position.x) * 180 / Math.PI + 90;
+    let angleDiff = ((toTarget - bot.rotation + 540) % 360) - 180;
+    if (Math.abs(angleDiff) < 12) {
+      bot.spacePressed = true;
+    } else {
+      bot.spacePressed = false;
+    }
+  } else {
+    bot.spacePressed = false;
+  }
+  // Mild friction
+  bot.velocity.x *= 0.995;
+  bot.velocity.y *= 0.995;
+  // Cap speed
+  const speed = Math.hypot(bot.velocity.x, bot.velocity.y);
+  const maxSpeed = 6 * (bot.speedMultiplier || 1);
+  if (speed > maxSpeed) { bot.velocity.x *= maxSpeed/speed; bot.velocity.y *= maxSpeed/speed; }
+  // Move
+  bot.position.x += bot.velocity.x;
+  bot.position.y += bot.velocity.y;
+  // Wrap
+  if (bot.position.x < 0) bot.position.x += WORLD_WIDTH; else if (bot.position.x > WORLD_WIDTH) bot.position.x -= WORLD_WIDTH;
+  if (bot.position.y < 0) bot.position.y += WORLD_HEIGHT; else if (bot.position.y > WORLD_HEIGHT) bot.position.y -= WORLD_HEIGHT;
 }
 
 // Game constants
@@ -458,6 +583,9 @@ const updateGameState = () => {
   // Simulation tick counter
   tick++;
   // Update asteroids
+  // Bullet creation (handle continuous fire & powerups)
+  // Update bots before handling shooting so their spacePressed is current
+  gameState.players.forEach(p => { if (p.isBot) updateBotAI(p); });
   gameState.asteroids.forEach(asteroid => {
     // Calculate new position
     const newPosition = {
@@ -1234,6 +1362,15 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Admin command: add bot
+  socket.on('addBot', () => {
+    const bot = createBotPlayer();
+    gameState.players.push(bot);
+    updateLeaderForPlayer(bot);
+    io.emit('playerCount', gameState.players.length);
+    console.log('Bot added');
+  });
+
   socket.on('disconnect', () => {
     gameState.players = gameState.players.filter(player => player.id !== socket.id);
     if (globalLeader && globalLeader.id === socket.id) {
@@ -1251,7 +1388,17 @@ initializeAsteroids();
 let tick = 0;
 setInterval(updateGameState, 1000 / 60);
 setInterval(() => {
-  io.emit('gameState', { ...gameState, leader: globalLeader, tick, serverTime: Date.now() });
+  const objectCounts = {
+    players: gameState.players.length,
+    asteroids: gameState.asteroids.length,
+    bullets: gameState.bullets.length,
+    ufoBullets: gameState.ufoBullets.length,
+    ufos: gameState.ufos.length,
+    powerups: gameState.powerups.length,
+    stars: gameState.stars.length
+  };
+  const objectCount = Object.values(objectCounts).reduce((a,b)=>a+b,0);
+  io.emit('gameState', { ...gameState, leader: globalLeader, tick, serverTime: Date.now(), objectCount, objectCounts });
 }, 1000 / 60);
 
 // Serve React app for any other routes

@@ -160,20 +160,14 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
         }
         return obj;
       });
-      renderState = {
-        ...gameState,
-        players: interp(previousStateRef.current.players || [], gameState.players || []),
-        asteroids: interp(previousStateRef.current.asteroids || [], gameState.asteroids || []),
-        ufos: interp(previousStateRef.current.ufos || [], gameState.ufos || []),
-        bullets: interp(previousStateRef.current.bullets || [], gameState.bullets || []),
-        ufoBullets: interp(previousStateRef.current.ufoBullets || [], gameState.ufoBullets || [])
-      };
-    }
-
-  const myPlayer = renderState.players.find(p => p.id === playerIdRef.current);
-    if (!myPlayer) {
-      animationFrameRef.current = requestAnimationFrame(gameLoop);
-      return;
+      renderState = { ...gameState };
+      if (gameState.players) renderState.players = interp(previousStateRef.current.players || [], gameState.players);
+      if (gameState.asteroids) renderState.asteroids = interp(previousStateRef.current.asteroids || [], gameState.asteroids);
+      if (gameState.ufos) renderState.ufos = interp(previousStateRef.current.ufos || [], gameState.ufos);
+      if (gameState.bullets) renderState.bullets = interp(previousStateRef.current.bullets || [], gameState.bullets);
+      if (gameState.ufoBullets) renderState.ufoBullets = interp(previousStateRef.current.ufoBullets || [], gameState.ufoBullets);
+      if (gameState.powerups) renderState.powerups = interp(previousStateRef.current.powerups || [], gameState.powerups);
+      if (gameState.stars) renderState.stars = interp(previousStateRef.current.stars || [], gameState.stars);
     }
 
     // Handle input EVERY FRAME - same as offline mode
@@ -201,6 +195,13 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
     };
     
     socketRef.current.emit('playerInput', currentInput);
+
+    // Resolve myPlayer reference (may be missing causing undefined errors)
+    const myPlayer = renderState.players && renderState.players.find(p => p.id === playerIdRef.current) || (renderState.players ? renderState.players[0] : null);
+    if (!myPlayer) {
+      animationFrameRef.current = requestAnimationFrame(gameLoop);
+      return;
+    }
 
     // Clear canvas
     context.fillStyle = 'black';
@@ -417,15 +418,23 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
     context.fillStyle = 'white';
     context.font = '20px Arial';
     context.textAlign = 'left';
-  context.fillText(`Score: ${myPlayer.score}`, 20, 30);
+  if (myPlayer) {
+    context.fillText(`Score: ${myPlayer.score}`, 20, 30);
     context.fillText(`High: ${myPlayer.highScore || 0}`, 20, 55);
+  }
     if (gameState.leader) {
       context.fillText(`Top: ${gameState.leader.name} ${gameState.leader.best}`, 20, 80);
+    }
+    // Top-right object count
+    if (typeof gameState.objectCount === 'number') {
+      context.textAlign = 'right';
+      context.fillText(`Objects: ${gameState.objectCount}`, canvas.width - 20, 30);
+      context.textAlign = 'left';
     }
 
     // Draw active powerups
   let powerupY = gameState.leader ? 105 : 80;
-    if (myPlayer.activePowerups && myPlayer.activePowerups.forEach) {
+    if (myPlayer && myPlayer.activePowerups && myPlayer.activePowerups.forEach) {
       myPlayer.activePowerups.forEach((powerup, type) => {
         const seconds = Math.ceil(powerup.duration / 60);
         const stackText = powerup.stack > 1 ? ` (x${powerup.stack})` : '';
@@ -505,7 +514,15 @@ const MultiplayerGame = ({ onBackToTitle, playerName }) => {
     );
   }
 
-  return <canvas ref={canvasRef} />;
+  return (
+    <div style={{ position: 'relative' }}>
+      <canvas ref={canvasRef} width={window.innerWidth} height={window.innerHeight} style={{ display: 'block', background: 'black' }} />
+      <button
+        style={{ position: 'absolute', bottom: 20, right: 20, zIndex: 10 }}
+        onClick={() => { if (socketRef.current) socketRef.current.emit('addBot'); }}
+      >Add Bot</button>
+    </div>
+  );
 };
 
 export default MultiplayerGame;
