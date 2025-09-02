@@ -63,7 +63,7 @@ const POWERUP_DURATIONS = {
 // UFO constants
 const UFO_RADIUS = 15;
 const UFO_MAX_COUNT = 3;
-const UFO_SPAWN_CHANCE = 0.002; // ~ one every 8 seconds on average
+const UFO_SPAWN_CHANCE = 0.005; // increased spawn rate (~ one every 3-4 seconds on average)
 const UFO_SHOOT_INTERVAL = 180; // 3 seconds @60fps
 const UFO_BULLET_SPEED = 5;
 
@@ -892,12 +892,16 @@ const updateGameState = () => {
     return true;
   });
 
-  // Update UFO bullets
+  // Update UFO bullets (collide with map borders and vanish)
   gameState.ufoBullets = gameState.ufoBullets.filter(b => {
     b.position.x += b.velocity.x;
     b.position.y += b.velocity.y;
-    b.lifeTime++;
-    return b.lifeTime < 360 && b.position.x > -200 && b.position.x < WORLD_WIDTH + 200 && b.position.y > -200 && b.position.y < WORLD_HEIGHT + 200;
+    const r = b.radius || 0;
+    // Remove if outside world bounds (treat as collision)
+    if (b.position.x - r <= 0 || b.position.x + r >= WORLD_WIDTH || b.position.y - r <= 0 || b.position.y + r >= WORLD_HEIGHT) {
+      return false;
+    }
+    return true;
   });
 
   // Player bullets hitting UFOs (circle vs polygon)
