@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import io from 'socket.io-client';
 import { handleInput, cleanup } from '../core/inputController';
 import Asteroid from './Asteroid';
+import UFO from './UFO';
+import Debris from './Debris';
 
 const MultiplayerGame = ({ onBackToTitle }) => {
   const canvasRef = useRef(null);
@@ -14,8 +16,12 @@ const MultiplayerGame = ({ onBackToTitle }) => {
   const animationFrameRef = useRef(null);
   const rotationRef = useRef(0);
   
-  // Cache for asteroid instances
+  // Cache for asteroid & UFO instances
   const asteroidInstancesRef = useRef(new Map());
+  const ufoInstancesRef = useRef(new Map());
+  // Debris per player id
+  const debrisMapRef = useRef(new Map()); // id -> array of Debris
+  const prevDeadRef = useRef(new Map()); // id -> boolean
 
   const getAsteroidInstance = (asteroidData) => {
     const key = asteroidData.id;
@@ -38,6 +44,20 @@ const MultiplayerGame = ({ onBackToTitle }) => {
     }
     
     return asteroidInstancesRef.current.get(key);
+  };
+
+  const getUFOInstance = (ufoData) => {
+    const key = ufoData.id;
+    if (!ufoInstancesRef.current.has(key)) {
+      const ufoInstance = new UFO({ position: ufoData.position, velocity: { x: 0, y: 0 } });
+      ufoInstance.position = ufoData.position;
+      ufoInstance.id = ufoData.id;
+      ufoInstancesRef.current.set(key, ufoInstance);
+    } else {
+      const inst = ufoInstancesRef.current.get(key);
+      inst.position = ufoData.position;
+    }
+    return ufoInstancesRef.current.get(key);
   };
 
   // Initialize socket connection
@@ -68,6 +88,15 @@ const MultiplayerGame = ({ onBackToTitle }) => {
         asteroidInstancesRef.current.forEach((instance, id) => {
           if (!serverAsteroidIds.has(id)) {
             asteroidInstancesRef.current.delete(id);
+          }
+        });
+      }
+      // Clean up UFO instances that no longer exist
+      if (state.ufos) {
+        const serverUfoIds = new Set(state.ufos.map(u => u.id));
+        ufoInstancesRef.current.forEach((instance, id) => {
+          if (!serverUfoIds.has(id)) {
+            ufoInstancesRef.current.delete(id);
           }
         });
       }
@@ -113,7 +142,7 @@ const MultiplayerGame = ({ onBackToTitle }) => {
     canvas.width = 1024;
     canvas.height = 768;
 
-    const myPlayer = gameState.players.find(p => p.id === playerIdRef.current);
+  const myPlayer = gameState.players.find(p => p.id === playerIdRef.current);
     if (!myPlayer) {
       animationFrameRef.current = requestAnimationFrame(gameLoop);
       return;
@@ -151,8 +180,10 @@ const MultiplayerGame = ({ onBackToTitle }) => {
 
     // Set up camera
     context.save();
-    const cameraX = myPlayer.position.x - canvas.width / 2;
-    const cameraY = myPlayer.position.y - canvas.height / 2;
+  // If dead, lock camera on death position
+  const camTarget = (myPlayer.dead && myPlayer.deathPosition) ? myPlayer.deathPosition : myPlayer.position;
+  const cameraX = camTarget.x - canvas.width / 2;
+  const cameraY = camTarget.y - canvas.height / 2;
     context.translate(-cameraX, -cameraY);
 
     // Draw stars
@@ -168,9 +199,8 @@ const MultiplayerGame = ({ onBackToTitle }) => {
     context.lineWidth = 4;
     context.strokeRect(0, 0, 3000, 2000);
 
-    // Draw players
-    gameState.players.forEach(player => {
-      if (player.delete) return;
+    // Draw players (skip drawing ship geometry if dead so debris is visible)
+  gameState.players.forEach(player => {
       
       context.save();
       context.translate(player.position.x, player.position.y);
@@ -180,14 +210,14 @@ const MultiplayerGame = ({ onBackToTitle }) => {
       context.strokeStyle = isMe ? '#00FFFF' : '#FFFF00';
       context.lineWidth = 2;
       
-      // Draw ship
+  // Draw ship
       context.beginPath();
       context.moveTo(0, -10);
       context.lineTo(-8, 10);
       context.lineTo(0, 5);
       context.lineTo(8, 10);
       context.closePath();
-      context.stroke();
+  if (!player.dead) context.stroke();
       
       context.restore();
       
@@ -274,33 +304,54 @@ const MultiplayerGame = ({ onBackToTitle }) => {
       }
     });
 
-    // Draw UFOs
-    gameState.ufos.forEach(ufo => {
-      context.save();
-      context.translate(ufo.position.x, ufo.position.y);
-      context.strokeStyle = 'white';
-      context.lineWidth = 2;
-      context.beginPath();
-      context.ellipse(0, 0, 15, 9, 0, 0, 2 * Math.PI);
-      context.stroke();
-      context.beginPath();
-      context.arc(0, -3, 9, Math.PI, 0, false);
-      context.stroke();
-      context.restore();
+    // Draw UFOs via component
+    if (gameState.ufos) {
+      gameState.ufos.forEach(ufoData => {
+        const ufoInst = getUFOInstance(ufoData);
+        ufoInst.draw(context);
+      });
+    }
+
+    // Debris: spawn on new deaths & draw/update within world transform
+    const shipSegments = [
+      [{ x: 0, y: -10 }, { x: -8, y: 10 }],
+      [{ x: -8, y: 10 }, { x: 0, y: 5 }],
+      [{ x: 0, y: 5 }, { x: 8, y: 10 }],
+      [{ x: 8, y: 10 }, { x: 0, y: -10 }]
+    ];
+    gameState.players.forEach(player => {
+      const wasDead = prevDeadRef.current.get(player.id) || false;
+      if (player.dead && !wasDead && player.deathPosition) {
+        const debrisPieces = shipSegments.map(seg => new Debris({
+          position: { x: player.deathPosition.x, y: player.deathPosition.y },
+          shape: seg
+        }));
+        debrisMapRef.current.set(player.id, debrisPieces);
+      }
+      prevDeadRef.current.set(player.id, player.dead);
+    });
+    // Remove debris for players no longer present
+    const currentIds = new Set(gameState.players.map(p => p.id));
+    Array.from(debrisMapRef.current.keys()).forEach(id => { if (!currentIds.has(id)) debrisMapRef.current.delete(id); });
+    // Update/draw debris (world space)
+    debrisMapRef.current.forEach((pieces, pid) => {
+      pieces.forEach(piece => { piece.update(); piece.draw(context); });
+      const remaining = pieces.filter(p => !p.delete);
+      if (remaining.length === 0) debrisMapRef.current.delete(pid); else debrisMapRef.current.set(pid, remaining);
     });
 
     context.restore();
 
-    // Draw UI
+    // Draw UI (screen space)
     context.fillStyle = 'white';
     context.font = '20px Arial';
     context.textAlign = 'left';
     context.fillText(`Score: ${myPlayer.score}`, 20, 30);
-    context.fillText(`Lives: ${myPlayer.lives}`, 20, 55);
+  // Lives removed for infinite respawns
     context.fillText(`Players: ${playerCount}`, 20, 80);
 
     // Draw active powerups
-    let powerupY = 110;
+  let powerupY = 80;
     if (myPlayer.activePowerups && myPlayer.activePowerups.forEach) {
       myPlayer.activePowerups.forEach((powerup, type) => {
         const seconds = Math.ceil(powerup.duration / 60);
@@ -317,6 +368,7 @@ const MultiplayerGame = ({ onBackToTitle }) => {
       context.textAlign = 'center';
       context.fillText('UFO SWARM INCOMING!', canvas.width / 2, 100);
     }
+
 
     animationFrameRef.current = requestAnimationFrame(gameLoop);
   }, [connected, gameState, playerCount, showUfoWarning]);

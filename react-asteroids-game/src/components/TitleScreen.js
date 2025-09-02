@@ -2,9 +2,7 @@ import React from 'react';
 
 const TitleScreen = ({ onModeSelect }) => {
   const handleKeyPress = (e) => {
-    if (e.key === '1') {
-      onModeSelect('offline');
-    } else if (e.key === '2') {
+    if (e.key === '1' || e.key === 'Enter' || e.key === ' ') {
       onModeSelect('multiplayer');
     }
   };
@@ -46,32 +44,18 @@ const TitleScreen = ({ onModeSelect }) => {
         lineHeight: '2',
         marginBottom: '60px'
       }}>
-        <div style={{ marginBottom: '20px' }}>Select Game Mode:</div>
-        
+        <div style={{ marginBottom: '20px' }}>Press ENTER to Start Multiplayer</div>
         <div style={{ 
-          padding: '20px',
-          border: '2px solid #00FFFF',
-          marginBottom: '20px',
-          backgroundColor: 'rgba(0, 255, 255, 0.1)',
-          cursor: 'pointer'
-        }}
-        onClick={() => onModeSelect('offline')}>
-          <strong>1. OFFLINE MODE</strong>
-          <div style={{ fontSize: '18px', color: '#CCCCCC', marginTop: '10px' }}>
-            Classic single-player experience with power-ups and UFO swarms
-          </div>
-        </div>
-        
-        <div style={{ 
-          padding: '20px',
+          padding: '28px 32px',
           border: '2px solid #00FF00',
-          backgroundColor: 'rgba(0, 255, 0, 0.1)',
-          cursor: 'pointer'
+          backgroundColor: 'rgba(0, 255, 0, 0.12)',
+          cursor: 'pointer',
+          fontSize: '28px'
         }}
         onClick={() => onModeSelect('multiplayer')}>
-          <strong>2. MULTIPLAYER</strong>
-          <div style={{ fontSize: '18px', color: '#CCCCCC', marginTop: '10px' }}>
-            Play with friends online - server authoritative gameplay
+          <strong>M U L T I P L A Y E R</strong>
+          <div style={{ fontSize: '16px', color: '#CCCCCC', marginTop: '12px', letterSpacing: '1px' }}>
+            Server authoritative Asteroids with power-ups & UFOs
           </div>
         </div>
       </div>
@@ -82,8 +66,7 @@ const TitleScreen = ({ onModeSelect }) => {
         textAlign: 'center',
         lineHeight: '1.5'
       }}>
-        Press <strong>1</strong> for Offline Mode or <strong>2</strong> for Multiplayer<br/>
-        Click on a mode to select it
+  Press <strong>Enter</strong> (or click) to begin Multiplayer
       </div>
       
       {/* Animated stars background */}

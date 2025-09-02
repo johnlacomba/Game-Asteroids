@@ -60,6 +60,94 @@ const POWERUP_DURATIONS = {
   bouncingBullets: 30 * 60   
 };
 
+// UFO constants
+const UFO_RADIUS = 15;
+const UFO_MAX_COUNT = 3;
+const UFO_SPAWN_CHANCE = 0.002; // ~ one every 8 seconds on average
+const UFO_SHOOT_INTERVAL = 180; // 3 seconds @60fps
+const UFO_BULLET_SPEED = 5;
+
+// Generate polygon for a UFO (matching client UFO.getPolygon)
+const getUFOPolygon = (ufo) => {
+  const r = ufo.radius;
+  return [
+    { x: ufo.position.x - r,       y: ufo.position.y - r / 2 },
+    { x: ufo.position.x + r,       y: ufo.position.y - r / 2 },
+    { x: ufo.position.x + r / 2,   y: ufo.position.y + r / 2 },
+    { x: ufo.position.x - r / 2,   y: ufo.position.y + r / 2 }
+  ];
+};
+
+// Helper to create a meandering UFO path fully inside borders
+// Helper to pick a random point on the border (excluding corners by a small inset)
+const randomBorderPoint = () => {
+  const inset = 40;
+  const side = Math.floor(Math.random() * 4); // 0 top,1 right,2 bottom,3 left
+  switch (side) {
+    case 0: return { x: inset + Math.random() * (WORLD_WIDTH - inset * 2), y: 0 }; // top
+    case 1: return { x: WORLD_WIDTH, y: inset + Math.random() * (WORLD_HEIGHT - inset * 2) }; // right
+    case 2: return { x: inset + Math.random() * (WORLD_WIDTH - inset * 2), y: WORLD_HEIGHT }; // bottom
+    case 3: return { x: 0, y: inset + Math.random() * (WORLD_HEIGHT - inset * 2) }; // left
+    default: return { x: 0, y: 0 };
+  }
+};
+
+// Create a UFO whose path starts just inside one border and ends on another border so it always exits
+const createUFO = () => {
+  // Start slightly inside the border (so it appears fully on screen)
+  const startBorderPoint = randomBorderPoint();
+  const inwardOffset = 60; // move inward along interior normal so it doesn't instantly disappear
+  const start = { ...startBorderPoint };
+  if (start.y === 0) start.y += inwardOffset; // top
+  else if (start.x === WORLD_WIDTH) start.x -= inwardOffset; // right
+  else if (start.y === WORLD_HEIGHT) start.y -= inwardOffset; // bottom
+  else if (start.x === 0) start.x += inwardOffset; // left
+
+  // Choose a different border for exit
+  let endBorderPoint;
+  do { endBorderPoint = randomBorderPoint(); } while (Math.abs(endBorderPoint.x - startBorderPoint.x) + Math.abs(endBorderPoint.y - startBorderPoint.y) < 400);
+  const end = { ...endBorderPoint }; // terminate AT the border point (vanish when reached)
+
+  const baseDir = { x: end.x - start.x, y: end.y - start.y };
+  const length = Math.sqrt(baseDir.x * baseDir.x + baseDir.y * baseDir.y) || 1;
+  baseDir.x /= length; baseDir.y /= length;
+  const perpDir = { x: -baseDir.y, y: baseDir.x };
+  // Keep amplitude smaller so sinusoidal oscillation does not leave map
+  const amplitude = 80 + Math.random() * 80;
+  const frequency = 0.8 + Math.random() * 1.0;
+  // Speed tuned to traverse path in ~10-14s
+  const speed = (0.0009 + Math.random() * 0.0005) * (800 / length); // normalize so long paths not too long
+  return {
+    id: `ufo_${Date.now()}_${Math.random()}`,
+    start,
+    end,
+    position: { ...start },
+    progress: 0,
+    baseDir,
+    perpDir,
+    distance: length,
+    amplitude,
+    frequency,
+    speed,
+    radius: UFO_RADIUS,
+    shootTimer: UFO_SHOOT_INTERVAL,
+    health: 1
+  };
+};
+
+const createUFOBullet = (ufo, target) => {
+  const dx = target.x - ufo.position.x;
+  const dy = target.y - ufo.position.y;
+  const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+  return {
+    id: `ufoBullet_${Date.now()}_${Math.random()}`,
+    position: { x: ufo.position.x, y: ufo.position.y },
+    velocity: { x: (dx / dist) * UFO_BULLET_SPEED, y: (dy / dist) * UFO_BULLET_SPEED },
+    radius: 3,
+    lifeTime: 0
+  };
+};
+
 const isValidPosition = (position, radius = 0) => {
   return position.x >= radius && 
          position.x <= WORLD_WIDTH - radius && 
@@ -303,6 +391,7 @@ const checkPowerupBoundaryCollision = (powerup) => {
 };
 
 const updateGameState = () => {
+  const deadThisFrame = new Set();
   // Update asteroids
   gameState.asteroids.forEach(asteroid => {
     // Calculate new position
@@ -420,6 +509,18 @@ const updateGameState = () => {
 
   // Update players
   gameState.players.forEach(player => {
+    // Handle death/respawn countdown
+    if (player.dead) {
+      player.respawnTimer--;
+      if (player.respawnTimer <= 0) {
+        player.dead = false;
+        player.position = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 };
+        player.velocity = { x: 0, y: 0 };
+        player.invulnerable = true;
+        setTimeout(() => { player.invulnerable = false; }, 2000);
+      }
+      return; // Skip movement while dead
+    }
     if (player.velocity && !player.delete) {
       // Apply speed multiplier if speedUp powerup is active
       const speedMultiplier = player.activePowerups && player.activePowerups.speedUp 
@@ -497,9 +598,9 @@ const updateGameState = () => {
     return isValidPosition(bullet.position, bullet.radius) && bullet.lifeTime < 300;
   });
 
-  // Process shooting for all players who are holding spacebar
+  // Process shooting for all players who are holding spacebar (skip dead)
   gameState.players.forEach(player => {
-    if (!player.delete && player.spacePressed) {
+    if (!player.delete && !player.dead && player.spacePressed) {
       // Initialize shooting timer if not exists
       if (player.shootTimer === undefined) {
         player.shootTimer = 0;
@@ -697,7 +798,7 @@ const updateGameState = () => {
 
   // Check player-asteroid collisions
   gameState.players.forEach(player => {
-    if (player.delete || player.invulnerable) return;
+  if (player.invulnerable || player.dead) return;
     
     // Skip collision check if player has invulnerability powerup
     if (player.activePowerups && player.activePowerups.invulnerability) {
@@ -726,15 +827,13 @@ const updateGameState = () => {
       const asteroidPolygon = getAsteroidPolygon(asteroidForCollision);
       
       if (checkPolygonCollision(playerPolygon, asteroidPolygon)) {
-        player.lives = Math.max(0, player.lives - 1);
-        if (player.lives <= 0) {
-          player.delete = true;
-        } else {
-          player.position = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 };
+        // Trigger death state (camera hold handled client-side)
+        if (!player.dead) {
+          player.dead = true;
+          deadThisFrame.add(player.id);
+          player.deathPosition = { x: player.position.x, y: player.position.y };
+          player.respawnTimer = 120; // 2 seconds @60fps
           player.velocity = { x: 0, y: 0 };
-          // Add brief invulnerability on respawn
-          player.invulnerable = true;
-          setTimeout(() => { player.invulnerable = false; }, 2000);
         }
         break;
       }
@@ -743,6 +842,115 @@ const updateGameState = () => {
 
   while (gameState.asteroids.length < 4) {
     gameState.asteroids.push(createAsteroid());
+  }
+
+  // Spawn UFOs
+  if (gameState.ufos.length < UFO_MAX_COUNT && Math.random() < UFO_SPAWN_CHANCE) {
+    gameState.ufos.push(createUFO());
+  }
+
+  // Update UFOs (meandering path)
+  gameState.ufos = gameState.ufos.filter(ufo => {
+    // Advance along path; speed is already per-frame fraction of full path
+    ufo.progress += ufo.speed; 
+    if (ufo.progress >= 1) return false; // terminate exactly at border end
+    const t = Math.min(1, ufo.progress);
+    // Base linear interpolation
+    const linX = ufo.start.x + (ufo.end.x - ufo.start.x) * t;
+    const linY = ufo.start.y + (ufo.end.y - ufo.start.y) * t;
+    // Sinusoidal offset along perpendicular
+    const sine = Math.sin(t * Math.PI * 2 * ufo.frequency);
+    ufo.position.x = linX + ufo.perpDir.x * sine * ufo.amplitude;
+    ufo.position.y = linY + ufo.perpDir.y * sine * ufo.amplitude;
+    // Shooting
+    ufo.shootTimer--;
+    if (ufo.shootTimer <= 0) {
+      // Find nearest player
+      let nearest = null; let nd = Infinity;
+      gameState.players.forEach(p => {
+        if (p.delete) return;
+        const dx = p.position.x - ufo.position.x;
+        const dy = p.position.y - ufo.position.y;
+        const d = dx * dx + dy * dy;
+        if (d < nd) { nd = d; nearest = p; }
+      });
+      if (nearest) {
+        gameState.ufoBullets.push(createUFOBullet(ufo, nearest.position));
+      }
+      ufo.shootTimer = UFO_SHOOT_INTERVAL;
+    }
+    return true;
+  });
+
+  // Update UFO bullets
+  gameState.ufoBullets = gameState.ufoBullets.filter(b => {
+    b.position.x += b.velocity.x;
+    b.position.y += b.velocity.y;
+    b.lifeTime++;
+    return b.lifeTime < 360 && b.position.x > -200 && b.position.x < WORLD_WIDTH + 200 && b.position.y > -200 && b.position.y < WORLD_HEIGHT + 200;
+  });
+
+  // Player bullets hitting UFOs (circle vs polygon)
+  for (let i = gameState.bullets.length - 1; i >= 0; i--) {
+    const bullet = gameState.bullets[i];
+    const bulletCircle = { x: bullet.position.x, y: bullet.position.y, radius: bullet.radius };
+    for (let j = gameState.ufos.length - 1; j >= 0; j--) {
+      const ufo = gameState.ufos[j];
+      const ufoPoly = getUFOPolygon(ufo);
+      if (checkCirclePolygonCollision(bulletCircle, ufoPoly)) {
+        if (!bullet.bouncing) gameState.bullets.splice(i, 1);
+        ufo.health -= 1;
+        if (ufo.health <= 0) {
+          gameState.ufos.splice(j, 1);
+        }
+        break;
+      }
+    }
+  }
+
+  // Player ship polygon vs UFO polygon collisions
+  gameState.players.forEach(player => {
+  if (player.dead || player.invulnerable || (player.activePowerups && player.activePowerups.invulnerability)) return;
+    const playerPoly = getShipPolygon({ x: player.position.x, y: player.position.y, rotation: player.rotation });
+    for (let j = gameState.ufos.length - 1; j >= 0; j--) {
+      const ufo = gameState.ufos[j];
+      const ufoPoly = getUFOPolygon(ufo);
+      if (checkPolygonCollision(playerPoly, ufoPoly)) {
+        if (!player.dead) {
+          player.dead = true;
+          deadThisFrame.add(player.id);
+          player.deathPosition = { x: player.position.x, y: player.position.y };
+          player.respawnTimer = 120;
+          player.velocity = { x: 0, y: 0 };
+        }
+        break;
+      }
+    }
+  });
+
+  // UFO bullets hitting players
+  for (let i = gameState.ufoBullets.length - 1; i >= 0; i--) {
+    const bullet = gameState.ufoBullets[i];
+    for (const player of gameState.players) {
+  if (player.dead || player.invulnerable || (player.activePowerups && player.activePowerups.invulnerability)) continue;
+      const dx = bullet.position.x - player.position.x;
+      const dy = bullet.position.y - player.position.y;
+      if (dx * dx + dy * dy < (20) * (20)) { // ship approx radius 20
+        gameState.ufoBullets.splice(i, 1);
+        if (!player.dead) {
+          player.dead = true;
+          deadThisFrame.add(player.id);
+          player.deathPosition = { x: player.position.x, y: player.position.y };
+          player.respawnTimer = 120;
+          player.velocity = { x: 0, y: 0 };
+        }
+        break;
+      }
+    }
+  }
+  // Remove bullets spawned this same frame by players who died this frame
+  if (deadThisFrame.size) {
+    gameState.bullets = gameState.bullets.filter(b => !(deadThisFrame.has(b.playerId) && b.lifeTime === 0));
   }
 };
 
@@ -758,9 +966,12 @@ io.on('connection', (socket) => {
       velocity: { x: 0, y: 0 },
       rotation: 0,
       score: 0,
-      lives: 3,
+  lives: Infinity, // UI convenience; not decremented anymore
       activePowerups: {},
       delete: false,
+  dead: false,
+  respawnTimer: 0,
+  deathPosition: null,
       shootTimer: 0,
       invulnerable: false,
       spacePressed: false
@@ -773,7 +984,7 @@ io.on('connection', (socket) => {
 
   socket.on('playerInput', (input) => {
     const player = gameState.players.find(p => p.id === socket.id);
-    if (player && input && !player.delete) {
+  if (player && input && !player.delete && !player.dead) {
       if (input.rotation !== undefined) player.rotation = input.rotation;
       if (input.keys.w) {
         const radians = (player.rotation - 90) * Math.PI / 180;
@@ -804,6 +1015,7 @@ initializeStars();
 initializeAsteroids();
 setInterval(() => {
   updateGameState();
+  // Emit trimmed state (currently whole object). UFO objects retain position/progress between frames.
   io.emit('gameState', gameState);
 }, 1000 / 60);
 
