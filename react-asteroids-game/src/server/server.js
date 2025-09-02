@@ -491,7 +491,7 @@ const initializeStars = () => {
 
 const initializeAsteroids = () => {
   gameState.asteroids = [];
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 20; i++) {
     gameState.asteroids.push(createAsteroid());
   }
 };
