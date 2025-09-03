@@ -166,100 +166,288 @@ function createBotPlayer() {
 
 function updateBotAI(bot) {
   if (bot.dead) return;
+  
   // Basic timers
   if (bot.invulnerable) {
     bot.invulnTimer--;
     if (bot.invulnTimer <= 0) bot.invulnerable = false;
   }
-  // Select nearest target (UFO prioritized, else asteroid)
+
+  // Current velocity analysis for maneuverability
+  const currentSpeed = Math.hypot(bot.velocity.x, bot.velocity.y);
+  const baseMaxSpeed = 4.5 * (bot.speedMultiplier || 1); // Reduced from 6 for better control
+  
+  // Select scoring targets (UFOs prioritized, then asteroids)
   let target = null;
-  let targetType = null;
   let bestDist = Infinity;
   gameState.ufos.forEach(u => {
     if (u.exploding) return;
     const dx = u.position.x - bot.position.x;
     const dy = u.position.y - bot.position.y;
     const d = dx*dx + dy*dy;
-    if (d < bestDist) { bestDist = d; target = u; targetType = 'ufo'; }
+    if (d < bestDist) { bestDist = d; target = u; }
   });
   if (!target) {
     gameState.asteroids.forEach(a => {
       const dx = a.position.x - bot.position.x;
       const dy = a.position.y - bot.position.y;
       const d = dx*dx + dy*dy;
-      if (d < bestDist) { bestDist = d; target = a; targetType = 'asteroid'; }
+      if (d < bestDist) { bestDist = d; target = a; }
     });
   }
-  // Avoid threats (UFO bullets, asteroids, UFOs) by steering opposite if close
+
+  // Path prediction for collision avoidance
+  const predictPath = (frames) => {
+    const path = [];
+    let px = bot.position.x;
+    let py = bot.position.y;
+    let vx = bot.velocity.x;
+    let vy = bot.velocity.y;
+    
+    for (let i = 0; i < frames; i++) {
+      px += vx;
+      py += vy;
+      vx *= 0.996; // Account for friction
+      vy *= 0.996;
+      path.push({ x: px, y: py, frame: i });
+    }
+    return path;
+  };
+
+  // Enhanced threat detection with path-based avoidance
   let avoidVec = { x: 0, y: 0 };
-  const addAvoid = (dx, dy, weight) => { avoidVec.x -= dx * weight; avoidVec.y -= dy * weight; };
+  let dangerLevel = 0;
+  const addAvoid = (dx, dy, weight, urgency = 1) => { 
+    avoidVec.x -= dx * weight * urgency; 
+    avoidVec.y -= dy * weight * urgency; 
+    dangerLevel = Math.min(1, dangerLevel + weight * 0.3 * urgency);
+  };
+
+  // Predict bot's path for next 60 frames
+  const botPath = predictPath(60);
+
+  // UFO bullets - predictive avoidance with path intersection
   gameState.ufoBullets.forEach(b => {
+    // Check immediate threat
     const dx = b.position.x - bot.position.x;
     const dy = b.position.y - bot.position.y;
     const d2 = dx*dx + dy*dy;
-    if (d2 < 200*200) addAvoid(dx, dy, 1/(d2+1));
+    if (d2 < 200*200) addAvoid(dx, dy, 3.0/(d2+30), 2.0);
+
+    // Check for path intersections
+    for (let i = 0; i < Math.min(botPath.length, 45); i++) {
+      const futureBot = botPath[i];
+      const futureBullet = {
+        x: b.position.x + b.velocity.x * i,
+        y: b.position.y + b.velocity.y * i
+      };
+      
+      const intersectDist = Math.hypot(futureBot.x - futureBullet.x, futureBot.y - futureBullet.y);
+      if (intersectDist < 80) {
+        const urgency = Math.max(0.5, (45 - i) / 45); // More urgent if collision is sooner
+        const avoidX = futureBullet.x - futureBot.x;
+        const avoidY = futureBullet.y - futureBot.y;
+        addAvoid(avoidX, avoidY, 2.5/(intersectDist+20), urgency * 1.5);
+        break;
+      }
+    }
   });
+
+  // Asteroids - comprehensive path-based collision avoidance
   gameState.asteroids.forEach(a => {
     const dx = a.position.x - bot.position.x;
     const dy = a.position.y - bot.position.y;
     const d2 = dx*dx + dy*dy;
-    const range = 140 + a.radius;
-    if (d2 < range*range) addAvoid(dx, dy, 0.5/(d2+1));
+    const asteroidRadius = a.radius || 40;
+    const safeRange = (asteroidRadius + 140) * (asteroidRadius + 140);
+    
+    // Immediate proximity avoidance
+    if (d2 < safeRange) {
+      const proximityUrgency = Math.max(1, (safeRange - d2) / safeRange * 3);
+      addAvoid(dx, dy, 2.0/(d2+60), proximityUrgency);
+    }
+    
+    // Path-based collision prediction
+    let collisionDetected = false;
+    for (let i = 0; i < Math.min(botPath.length, 50); i++) {
+      const futureBot = botPath[i];
+      
+      // Predict asteroid position (accounting for its movement)
+      const futureAsteroid = {
+        x: a.position.x + (a.velocity?.x || 0) * i,
+        y: a.position.y + (a.velocity?.y || 0) * i
+      };
+      
+      const collisionDist = Math.hypot(futureBot.x - futureAsteroid.x, futureBot.y - futureAsteroid.y);
+      const dangerZone = asteroidRadius + 100; // Safety buffer
+      
+      if (collisionDist < dangerZone) {
+        collisionDetected = true;
+        const timeUrgency = Math.max(0.3, (50 - i) / 50); // More urgent if collision is sooner
+        const severityUrgency = Math.max(1, (dangerZone - collisionDist) / dangerZone * 2);
+        
+        // Calculate perpendicular avoidance vector
+        const toAsteroid = Math.hypot(dx, dy) || 1;
+        const perpX = -dy / toAsteroid; // Perpendicular to line between bot and asteroid
+        const perpY = dx / toAsteroid;
+        
+        // Choose best perpendicular direction (away from predicted collision)
+        const collisionAvoidX = futureBot.x - futureAsteroid.x;
+        const collisionAvoidY = futureBot.y - futureAsteroid.y;
+        const perpDot = perpX * collisionAvoidX + perpY * collisionAvoidY;
+        const chosenPerpX = perpDot > 0 ? perpX : -perpX;
+        const chosenPerpY = perpDot > 0 ? perpY : -perpY;
+        
+        // Apply both direct avoidance and perpendicular steering
+        addAvoid(-chosenPerpX, -chosenPerpY, 3.5/(collisionDist+40), timeUrgency * severityUrgency);
+        addAvoid(dx, dy, 2.0/(collisionDist+60), timeUrgency); // Also avoid directly
+        
+        break; // Found collision, no need to check further frames
+      }
+    }
+    
+    // Additional velocity-based avoidance for fast-moving bots
+    if (!collisionDetected && currentSpeed > 2.0 && d2 < safeRange * 2) {
+      const botDirX = bot.velocity.x / currentSpeed;
+      const botDirY = bot.velocity.y / currentSpeed;
+      const toAsteroid = Math.sqrt(d2);
+      const dotProduct = (botDirX * dx + botDirY * dy) / toAsteroid;
+      
+      if (dotProduct > 0.5) { // Moving toward asteroid
+        const speedUrgency = Math.min(2, currentSpeed / 3); // More urgent at higher speeds
+        addAvoid(dx, dy, 2.5/(d2+50), speedUrgency);
+        
+        // Add perpendicular steering to avoid head-on collision
+        const perpX = -botDirY;
+        const perpY = botDirX;
+        addAvoid(-perpX, -perpY, 1.5, speedUrgency * 0.7);
+      }
+    }
   });
+
+  // UFOs - hull avoidance with path prediction
   gameState.ufos.forEach(u => {
+    if (u.exploding) return;
     const dx = u.position.x - bot.position.x;
     const dy = u.position.y - bot.position.y;
     const d2 = dx*dx + dy*dy;
-    if (d2 < 250*250) addAvoid(dx, dy, 0.7/(d2+1));
+    if (d2 < 400*400) addAvoid(dx, dy, 1.0/(d2+120));
+    
+    // Check path intersections with UFO
+    for (let i = 0; i < Math.min(botPath.length, 30); i++) {
+      const futureBot = botPath[i];
+      const futureUFO = {
+        x: u.position.x + (u.velocity?.x || 0) * i,
+        y: u.position.y + (u.velocity?.y || 0) * i
+      };
+      
+      const intersectDist = Math.hypot(futureBot.x - futureUFO.x, futureBot.y - futureUFO.y);
+      if (intersectDist < 120) {
+        const urgency = Math.max(0.5, (30 - i) / 30);
+        addAvoid(futureUFO.x - futureBot.x, futureUFO.y - futureBot.y, 1.5/(intersectDist+80), urgency);
+        break;
+      }
+    }
   });
-  // Normalize avoidance
+
+  // Normalize avoidance vector
   const avLen = Math.hypot(avoidVec.x, avoidVec.y);
-  if (avLen > 0) { avoidVec.x/=avLen; avoidVec.y/=avLen; }
-  // Desired direction: avoidance first, else target pursuit
+  if (avLen > 0) { 
+    avoidVec.x /= avLen; 
+    avoidVec.y /= avLen; 
+  }
+
+  // Decision making: threat avoidance vs scoring
   let desiredDir = null;
-  if (avLen > 0.1) {
-    desiredDir = avoidVec;
+  let shouldBrake = false;
+  
+  if (avLen > 0.05) {
+    // Threats detected - prioritize avoidance
+    if (dangerLevel > 0.4) {
+      desiredDir = avoidVec; // Pure avoidance
+      shouldBrake = currentSpeed > 3.0; // Brake if too fast to maneuver
+    } else if (target) {
+      // Blend avoidance with pursuit
+      const pursuitX = target.position.x - bot.position.x;
+      const pursuitY = target.position.y - bot.position.y;
+      const pursuitLen = Math.hypot(pursuitX, pursuitY) || 1;
+      
+      const avoidWeight = 0.7;
+      const pursuitWeight = 0.3;
+      desiredDir = {
+        x: (avoidVec.x * avoidWeight + (pursuitX/pursuitLen) * pursuitWeight),
+        y: (avoidVec.y * avoidWeight + (pursuitY/pursuitLen) * pursuitWeight)
+      };
+      const dl = Math.hypot(desiredDir.x, desiredDir.y) || 1;
+      desiredDir.x /= dl;
+      desiredDir.y /= dl;
+    } else {
+      desiredDir = avoidVec;
+    }
   } else if (target) {
-    desiredDir = { x: (target.position.x - bot.position.x), y: (target.position.y - bot.position.y) };
+    // No immediate threats - pursue target cautiously
+    desiredDir = { 
+      x: target.position.x - bot.position.x, 
+      y: target.position.y - bot.position.y 
+    };
     const dl = Math.hypot(desiredDir.x, desiredDir.y) || 1;
-    desiredDir.x/=dl; desiredDir.y/=dl;
+    desiredDir.x /= dl;
+    desiredDir.y /= dl;
   }
+
+  // Movement execution
   if (desiredDir) {
-    const targetAngle = Math.atan2(desiredDir.y, desiredDir.x) * 180 / Math.PI + 90; // ship faces up
+    const targetAngle = Math.atan2(desiredDir.y, desiredDir.x) * 180 / Math.PI + 90;
     let diff = ((targetAngle - bot.rotation + 540) % 360) - 180;
-    const turnRate = 4; // deg per frame
-    if (diff > turnRate) diff = turnRate; else if (diff < -turnRate) diff = -turnRate;
+    
+    // Dynamic turn rate based on danger and speed
+    let turnRate = dangerLevel > 0.3 ? 6 : 4;
+    if (currentSpeed > 4.0) turnRate = Math.max(2, turnRate - 2); // Slower turns at high speed
+    
+    if (diff > turnRate) diff = turnRate; 
+    else if (diff < -turnRate) diff = -turnRate;
     bot.rotation = (bot.rotation + diff + 360) % 360;
-    // Thrust if moving toward target or evading
-    const radians = (bot.rotation - 90) * Math.PI / 180;
-    bot.velocity.x += Math.cos(radians) * 0.12;
-    bot.velocity.y += Math.sin(radians) * 0.12;
+
+    // Thrust management - avoid excessive speed
+    if (!shouldBrake && currentSpeed < baseMaxSpeed) {
+      const radians = (bot.rotation - 90) * Math.PI / 180;
+      let thrustPower = dangerLevel > 0.3 ? 0.15 : 0.10; // More thrust when avoiding
+      
+      // Reduce thrust if already moving fast
+      if (currentSpeed > 3.5) thrustPower *= 0.6;
+      
+      bot.velocity.x += Math.cos(radians) * thrustPower;
+      bot.velocity.y += Math.sin(radians) * thrustPower;
+    }
   }
-  // Fire if target roughly in front and cooldown ready
-  if (target) {
+
+  // Shooting - only when safe and target aligned
+  if (target && dangerLevel < 0.6) {
     const toTarget = Math.atan2(target.position.y - bot.position.y, target.position.x - bot.position.x) * 180 / Math.PI + 90;
     let angleDiff = ((toTarget - bot.rotation + 540) % 360) - 180;
-    if (Math.abs(angleDiff) < 12) {
-      bot.spacePressed = true;
-    } else {
-      bot.spacePressed = false;
-    }
+    bot.spacePressed = Math.abs(angleDiff) < 15;
   } else {
     bot.spacePressed = false;
   }
-  // Mild friction
-  bot.velocity.x *= 0.995;
-  bot.velocity.y *= 0.995;
-  // Cap speed
-  const speed = Math.hypot(bot.velocity.x, bot.velocity.y);
-  const maxSpeed = 6 * (bot.speedMultiplier || 1);
-  if (speed > maxSpeed) { bot.velocity.x *= maxSpeed/speed; bot.velocity.y *= maxSpeed/speed; }
-  // Move
+
+  // Enhanced friction and speed control
+  bot.velocity.x *= shouldBrake ? 0.985 : 0.996;
+  bot.velocity.y *= shouldBrake ? 0.985 : 0.996;
+  
+  // Strict speed limiting for maneuverability
+  const finalSpeed = Math.hypot(bot.velocity.x, bot.velocity.y);
+  if (finalSpeed > baseMaxSpeed) {
+    bot.velocity.x *= baseMaxSpeed / finalSpeed;
+    bot.velocity.y *= baseMaxSpeed / finalSpeed;
+  }
+
+  // Movement and wrapping
   bot.position.x += bot.velocity.x;
   bot.position.y += bot.velocity.y;
-  // Wrap
-  if (bot.position.x < 0) bot.position.x += WORLD_WIDTH; else if (bot.position.x > WORLD_WIDTH) bot.position.x -= WORLD_WIDTH;
-  if (bot.position.y < 0) bot.position.y += WORLD_HEIGHT; else if (bot.position.y > WORLD_HEIGHT) bot.position.y -= WORLD_HEIGHT;
+  if (bot.position.x < 0) bot.position.x += WORLD_WIDTH; 
+  else if (bot.position.x > WORLD_WIDTH) bot.position.x -= WORLD_WIDTH;
+  if (bot.position.y < 0) bot.position.y += WORLD_HEIGHT; 
+  else if (bot.position.y > WORLD_HEIGHT) bot.position.y -= WORLD_HEIGHT;
 }
 
 // Game constants
