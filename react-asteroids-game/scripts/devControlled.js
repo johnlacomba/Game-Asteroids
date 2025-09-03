@@ -5,8 +5,18 @@ const { spawn } = require('child_process');
 const path = require('path');
 const express = require('express');
 
-// Launch React dev server
-const react = spawn('npm', ['start'], { stdio: 'inherit', shell: true });
+// Launch React dev server (detached to allow group signal kill)
+const react = spawn('npm', ['start'], { stdio: 'inherit', shell: true, detached: true });
+
+function killReactTree() {
+  if (!react || react.killed) return;
+  try {
+    // Send SIGINT to entire group
+    process.kill(-react.pid, 'SIGINT');
+  } catch(_) {}
+  // Hard kill fallback after grace period
+  setTimeout(() => { try { process.kill(-react.pid, 'SIGKILL'); } catch(_) {} }, 3000);
+}
 
 let serverProcess = null;
 
@@ -17,10 +27,10 @@ function startServer() {
     console.log('[backend] exited', code);
     serverProcess = null;
     // If backend indicates host-triggered shutdown (code 99), also stop React
-    if (code === 99) {
-      console.log('[control] Host-triggered full stack shutdown. Terminating React dev server.');
-      react.kill('SIGINT');
-      process.exit(0);
+    if (code === 99 || code === 0) {
+      console.log('[control] Backend exited (code', code, '). Terminating React dev server (group).');
+      killReactTree();
+      setTimeout(()=>process.exit(0),500);
     }
   });
   return { started: true, message: 'Server starting' };
@@ -42,6 +52,17 @@ controlApp.get('/status', (req, res) => {
 const CONTROL_PORT = 5002;
 controlApp.listen(CONTROL_PORT, () => {
   console.log(`[control] Ready on http://localhost:${CONTROL_PORT} (POST /start-backend)`);
+});
+
+// Graceful full-stack shutdown endpoint (used when closing tab from title screen)
+controlApp.post('/shutdown', (req,res) => {
+  console.log('[control] Shutdown requested via /shutdown');
+  if (serverProcess) {
+    try { serverProcess.kill('SIGINT'); } catch(_) {}
+  }
+  killReactTree();
+  res.json({ shuttingDown: true });
+  setTimeout(()=>process.exit(0),400);
 });
 
 process.on('SIGINT', () => {

@@ -1642,6 +1642,8 @@ let hostSocketId = null;
 // Socket connection handling
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
+  // Auto-assign first connected socket as host if none chosen yet (so closing tab at menu still shuts everything down)
+  // Only auto-assign host after an explicit join to avoid premature shutdowns
 
   socket.on('joinGame', (playerName, opts = {}) => {
     const newPlayer = {
@@ -1724,7 +1726,7 @@ io.on('connection', (socket) => {
     console.log('User disconnected:', socket.id);
     if (socket.id === hostSocketId) {
       console.log('Host disconnected. Server shutting down (full stack)...');
-      setTimeout(() => process.exit(99), 200);
+      setTimeout(() => process.exit(99), 150);
     }
   });
 });
