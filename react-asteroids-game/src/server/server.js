@@ -679,7 +679,7 @@ const initializeStars = () => {
 
 const initializeAsteroids = () => {
   gameState.asteroids = [];
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 30; i++) {
     gameState.asteroids.push(createAsteroid());
   }
 };
