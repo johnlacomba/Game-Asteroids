@@ -1723,8 +1723,8 @@ io.on('connection', (socket) => {
     io.emit('playerCount', gameState.players.length);
     console.log('User disconnected:', socket.id);
     if (socket.id === hostSocketId) {
-      console.log('Host disconnected. Server shutting down...');
-      setTimeout(() => process.exit(0), 250);
+      console.log('Host disconnected. Server shutting down (full stack)...');
+      setTimeout(() => process.exit(99), 200);
     }
   });
 });
@@ -1732,9 +1732,9 @@ io.on('connection', (socket) => {
 // Endpoint to signal host disconnect explicitly (navigator.sendBeacon / fetch keepalive)
 app.post('/hostDisconnect', (req, res) => {
   if (hostSocketId) {
-    console.log('Host disconnect endpoint called. Shutting down.');
+    console.log('Host disconnect endpoint called. Shutting down (full stack)...');
     res.json({ shuttingDown: true });
-    setTimeout(() => process.exit(0), 250);
+    setTimeout(() => process.exit(99), 200);
   } else {
     res.json({ shuttingDown: false, reason: 'No host set' });
   }

@@ -13,7 +13,16 @@ let serverProcess = null;
 function startServer() {
   if (serverProcess) return { started: false, message: 'Server already running' };
   serverProcess = spawn('node', ['src/server/server.js'], { stdio: 'inherit', shell: true });
-  serverProcess.on('exit', code => { console.log('[backend] exited', code); serverProcess = null; });
+  serverProcess.on('exit', code => {
+    console.log('[backend] exited', code);
+    serverProcess = null;
+    // If backend indicates host-triggered shutdown (code 99), also stop React
+    if (code === 99) {
+      console.log('[control] Host-triggered full stack shutdown. Terminating React dev server.');
+      react.kill('SIGINT');
+      process.exit(0);
+    }
+  });
   return { started: true, message: 'Server starting' };
 }
 
