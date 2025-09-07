@@ -5,6 +5,7 @@ import Debris from './Debris';
 import UFO from './UFO';
 import Powerup from './Powerup';
 import { handleInput } from '../core/inputController';
+import { handleInput, setMouseVector, getAimRotation } from '../core/inputController';
 import { checkPolygonCollision, checkCirclePolygonCollision } from '../core/collision';
 
 const Game = ({ onBackToTitle }) => {
@@ -205,6 +206,12 @@ const Game = ({ onBackToTitle }) => {
 
     const gameLoop = () => {
       const currentPlayer = playerRef.current;
+        // Mouse aim: set player rotation from aim and disable A/D rotation while aiming
+        const aimRot = getAimRotation && getAimRotation();
+        if (typeof aimRot === 'number' && !Number.isNaN(aimRot)) {
+          currentPlayer.rotation = aimRot;
+          keys = { ...keys, a: false, d: false };
+        }
 
       // Update active powerups
       activePowerupsRef.current.forEach((powerup, type) => {
@@ -225,7 +232,11 @@ const Game = ({ onBackToTitle }) => {
         if (shootCooldownRef.current > 0) {
           shootCooldownRef.current--;
         }
-        const keys = handleInput();
+  const keys = handleInput();
+  // aimRotation is computed in inputController from mouse or right-stick
+  let aimRotation;
+  try { const { getAimRotation } = require('../core/inputController'); aimRotation = getAimRotation(); } catch(e) {}
+  const aimActive = typeof aimRotation === 'number' && !Number.isNaN(aimRotation);
         
         const rapidFirePowerup = activePowerupsRef.current.get('rapidFire');
         const rapidFireMultiplier = rapidFirePowerup ? 5 ** rapidFirePowerup.stack : 1;
@@ -233,12 +244,12 @@ const Game = ({ onBackToTitle }) => {
 
         // Handle shooting
         if (keys[' '] && shootCooldownRef.current <= 0) {
-          const newBullets = currentPlayer.shoot(activePowerupsRef.current);
+          const newBullets = currentPlayer.shoot(activePowerupsRef.current, aimActive ? aimRotation : undefined);
           bulletsRef.current.push(...newBullets);
           shootCooldownRef.current = shootCooldown;
         }
-        // Update player
-        currentPlayer.update(keys, WORLD_WIDTH, WORLD_HEIGHT, activePowerupsRef.current);
+  // Update player (movement independent of aim)
+  currentPlayer.update(keys, WORLD_WIDTH, WORLD_HEIGHT, activePowerupsRef.current, { aimRotation, aimActive });
       }
 
       // UFO Spawn Logic - Check if we should switch to wave mode
@@ -565,5 +576,20 @@ const Game = ({ onBackToTitle }) => {
     </>
   );
 };
+
+  useEffect(() => {
+    const onMouseMove = (e) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      const mx = cx - rect.width/2;
+      const my = cy - rect.height/2;
+      setMouseVector(mx, my);
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    return () => window.removeEventListener('mousemove', onMouseMove);
+  }, []);
 
 export default Game;

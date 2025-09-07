@@ -1067,7 +1067,8 @@ const updateGameState = () => {
 
       // Check if player can shoot (timer at or below 0)
       if (player.shootTimer <= 0) {
-        const radians = (player.rotation - 90) * Math.PI / 180;
+        const useRot = (player.aimRotation !== undefined && player.aimRotation !== null) ? player.aimRotation : player.rotation;
+        const radians = (useRot - 90) * Math.PI / 180;
         
         // Check for spread shot powerup
         if (player.activePowerups && player.activePowerups.spreadShot) {
@@ -1653,6 +1654,7 @@ io.on('connection', (socket) => {
   position: { x: Math.random()*WORLD_WIDTH, y: Math.random()*WORLD_HEIGHT },
       velocity: { x: 0, y: 0 },
       rotation: 0,
+  aimRotation: 0,
       score: 0,
   highScore: 0,
   lives: Infinity, // UI convenience; not decremented anymore
@@ -1679,7 +1681,12 @@ io.on('connection', (socket) => {
   socket.on('playerInput', (input) => {
     const player = gameState.players.find(p => p.id === socket.id);
   if (player && input && !player.delete && !player.dead) {
-      if (input.rotation !== undefined) player.rotation = input.rotation;
+      if (input.rotation !== undefined) {
+        player.rotation = input.rotation;
+      }
+      if (input.aimRotation !== undefined) {
+        player.aimRotation = input.aimRotation;
+      }
       if (input.keys.w) {
         const radians = (player.rotation - 90) * Math.PI / 180;
         // Reduce acceleration by half (from 0.3 to 0.15)

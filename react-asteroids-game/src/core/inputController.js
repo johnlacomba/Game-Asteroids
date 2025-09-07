@@ -1,4 +1,4 @@
-import { getMobileKeys } from './mobileInput';
+import { getMobileKeys, getRightJoystickVector } from './mobileInput';
 
 const keys = {
   w: false,
@@ -9,6 +9,10 @@ const keys = {
 };
 
 let initialized = false;
+
+// Mouse aim state (screen coords relative to canvas center, set by consumer)
+let mouse = { x: 0, y: 0, down: false };
+let aimRotation = 0; // degrees
 
 function handleKeyDown(e) {
   // Prevent default to stop page scrolling
@@ -65,15 +69,25 @@ function initializeInput() {
   window.removeEventListener('keyup', handleKeyUp, true);
   window.removeEventListener('blur', handleBlur);
   window.removeEventListener('focus', handleBlur); // Also clear on focus to reset state
+  window.removeEventListener('mousedown', onMouseDown, true);
+  window.removeEventListener('mouseup', onMouseUp, true);
   
   // Add new listeners with capture flag for better reliability
   window.addEventListener('keydown', handleKeyDown, true);
   window.addEventListener('keyup', handleKeyUp, true);
   window.addEventListener('blur', handleBlur);
   window.addEventListener('focus', handleBlur);
+  window.addEventListener('mousedown', onMouseDown, true);
+  window.addEventListener('mouseup', onMouseUp, true);
   
   initialized = true;
 }
+
+function onMouseDown(e){ mouse.down = true; }
+function onMouseUp(e){ mouse.down = false; }
+
+// Consumers (MultiplayerGame) should call this each frame with their canvas-relative mouse vector
+export function setMouseVector(x, y){ mouse.x = x; mouse.y = y; }
 
 export function handleInput() {
   if (!initialized) {
@@ -84,6 +98,19 @@ export function handleInput() {
   const mobile = getMobileKeys();
   const currentKeys = { ...keys };
   Object.keys(mobile).forEach(k => { if (mobile[k]) currentKeys[k] = true; });
+  // Also map mouse left button as fire (desktop)
+  if (mouse.down) currentKeys[' '] = true;
+
+  // Compute aimRotation priority: right stick > mouse > A/D rotation keys handled elsewhere
+  const right = getRightJoystickVector ? getRightJoystickVector() : { x:0, y:0 };
+  const rightMag = Math.hypot(right.x, right.y);
+  const mouseMag = Math.hypot(mouse.x || 0, mouse.y || 0);
+  if (rightMag > 0.05) {
+    aimRotation = Math.atan2(right.x, -right.y) * 180 / Math.PI;
+  } else if (mouseMag > 2) {
+    // mouse vector y: up negative; convert to same mapping as player (0 up, +cw)
+    aimRotation = Math.atan2(mouse.x, -mouse.y) * 180 / Math.PI;
+  }
   
   // Debug: Log current key state every few frames
   // removed random debug logging
@@ -99,6 +126,8 @@ export function cleanup() {
     window.removeEventListener('keyup', handleKeyUp, true);
     window.removeEventListener('blur', handleBlur);
     window.removeEventListener('focus', handleBlur);
+  window.removeEventListener('mousedown', onMouseDown, true);
+  window.removeEventListener('mouseup', onMouseUp, true);
   }
   
   initialized = false;
@@ -113,3 +142,5 @@ export function cleanup() {
 export function getKeyState() {
   return { ...keys };
 }
+
+export function getAimRotation(){ return aimRotation; }

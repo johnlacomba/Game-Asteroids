@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import io from 'socket.io-client';
-import { handleInput, cleanup } from '../core/inputController';
-import { getJoystickVector } from '../core/mobileInput';
+import { handleInput, cleanup, setMouseVector, getAimRotation } from '../core/inputController';
+import { getJoystickVector, getRightJoystickVector } from '../core/mobileInput';
 import Asteroid from './Asteroid';
 import UFO from './UFO';
 import Debris from './Debris';
@@ -19,9 +19,12 @@ const MultiplayerGame = ({ onBackToTitle, playerName, serverAddress, isHost }) =
   const [showUfoWarning, setShowUfoWarning] = useState(false);
   const animationFrameRef = useRef(null);
   const rotationRef = useRef(0);
+  const mouseVecRef = useRef({ x: 0, y: 0 });
+  const canvasOffsetRef = useRef({left:0, top:0});
   const showScoreboardRef = useRef(false);
   const scoreboardHitRegionsRef = useRef([]); // store clickable scoreboard buttons (bot remove, add bot)
   const followedPlayerIdRef = useRef(null); // camera follow target (other player)
+  const joyActivePrevRef = useRef(false);
   
   // Cache for asteroid & UFO instances
   const asteroidInstancesRef = useRef(new Map());
@@ -163,8 +166,11 @@ const MultiplayerGame = ({ onBackToTitle, playerName, serverAddress, isHost }) =
     }
 
     const context = canvas.getContext('2d');
-    canvas.width = 1024;
-    canvas.height = 768;
+  canvas.width = 1024;
+  canvas.height = 768;
+  // Cache canvas offset for mouse calculations
+  const rect = canvas.getBoundingClientRect();
+  canvasOffsetRef.current = { left: rect.left, top: rect.top, w: rect.width, h: rect.height };
 
     // Interpolate snapshot
     let renderState = gameState;
@@ -191,7 +197,7 @@ const MultiplayerGame = ({ onBackToTitle, playerName, serverAddress, isHost }) =
     }
 
     // Handle input EVERY FRAME - same as offline mode
-    const keys = handleInput();
+  const keys = handleInput();
     
     if (keys.a) {
       rotationRef.current -= 5;
@@ -200,19 +206,27 @@ const MultiplayerGame = ({ onBackToTitle, playerName, serverAddress, isHost }) =
       rotationRef.current += 5;
     }
 
-    // Joystick aim support
+  // Joystick/mouse aim support
     let joy = { x: 0, y: 0 };
     try { joy = getJoystickVector(); } catch (e) {}
     const joyMag = Math.hypot(joy.x, joy.y);
-    if (joyMag > 0.05) {
+  // Left stick drives movement heading at all times (turret is independent)
+  if (joyMag > 0.05) {
       const desired = Math.atan2(joy.x, -joy.y) * 180 / Math.PI; // matches Player.js mapping
-      let delta = desired - rotationRef.current;
-      delta = ((delta + 180) % 360 + 360) % 360 - 180;
-      const step = Math.sign(delta) * Math.min(Math.abs(delta), 5);
-      rotationRef.current += step;
+      if (!joyActivePrevRef.current) {
+        rotationRef.current = desired; // snap to pressed direction immediately
+      } else {
+        let delta = desired - rotationRef.current;
+        delta = ((delta + 180) % 360 + 360) % 360 - 180;
+        const step = Math.sign(delta) * Math.min(Math.abs(delta), 5);
+        rotationRef.current += step;
+      }
     }
+  joyActivePrevRef.current = joyMag > 0.05;
 
-    rotationRef.current = ((rotationRef.current % 360) + 360) % 360;
+  // Compute aim rotation (turret) without overriding movement rotation
+  const aimRot = getAimRotation();
+  rotationRef.current = ((rotationRef.current % 360) + 360) % 360;
 
     // Always send input every frame, don't check if it changed
     const currentInput = {
@@ -223,7 +237,8 @@ const MultiplayerGame = ({ onBackToTitle, playerName, serverAddress, isHost }) =
         d: keys.d || false,
         space: keys[' '] || false
       },
-      rotation: rotationRef.current
+  rotation: rotationRef.current,
+  aimRotation: (!Number.isNaN(aimRot) && aimRot !== undefined) ? aimRot : rotationRef.current
     };
   currentInput.keys.w = (joyMag > 0.1) || keys.w || false;
   currentInput.keys.s = (! (joyMag > 0.1) && keys.s) || false;
@@ -603,6 +618,24 @@ const MultiplayerGame = ({ onBackToTitle, playerName, serverAddress, isHost }) =
 
     animationFrameRef.current = requestAnimationFrame(gameLoop);
   }, [connected, gameState, showUfoWarning]);
+
+  useEffect(() => {
+    // Mouse move -> update aim vector relative to canvas center
+    const onMouseMove = (e) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      // Convert to centered coords
+      const mx = cx - rect.width/2;
+      const my = cy - rect.height/2;
+  mouseVecRef.current = { x: mx, y: my };
+      setMouseVector(mx, my);
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    return () => window.removeEventListener('mousemove', onMouseMove);
+  }, []);
 
   useEffect(() => {
     animationFrameRef.current = requestAnimationFrame(gameLoop);

@@ -43,7 +43,7 @@ export default class Player {
     return debris;
   }
 
-  shoot(activePowerups) {
+  shoot(activePowerups, aimRotation) {
     const bullets = [];
     const isHoming = activePowerups.has('homingShot');
     const isPowerShot = activePowerups.has('powerShot');
@@ -67,12 +67,13 @@ export default class Player {
     };
 
     // Main bullet (forward)
-    bullets.push(createBullet(this.rotation));
+    const fireRot = (typeof aimRotation === 'number') ? aimRotation : this.rotation;
+    bullets.push(createBullet(fireRot));
 
     // Spread shot
     if (activePowerups.has('spreadShot')) {
-      bullets.push(createBullet(this.rotation - 45));
-      bullets.push(createBullet(this.rotation + 45));
+      bullets.push(createBullet(fireRot - 45));
+      bullets.push(createBullet(fireRot + 45));
     }
 
     return bullets;
@@ -97,31 +98,41 @@ export default class Player {
     this.velocity.y += Math.cos(-this.rotation * Math.PI / 180) * (this.speed / 2);
   }
 
-  update(keys, worldWidth, worldHeight, activePowerups) {
+  update(keys, worldWidth, worldHeight, activePowerups, aim = {}) {
     const speedUpPowerup = activePowerups.get('speedUp');
     const speedMultiplier = speedUpPowerup ? 1.5 ** speedUpPowerup.stack : 1; // Changed from 2 to 1.5
     const currentSpeed = this.speed * speedMultiplier;
 
     // Optional joystick vector (mobile analog) injected via global accessor to avoid circular deps
     let joystickVec = null;
+    let rightStick = null;
     try {
       // Lazy require to prevent bundler issues if unused
-      const { getJoystickVector } = require('../core/mobileInput');
+      const { getJoystickVector, getRightJoystickVector } = require('../core/mobileInput');
       joystickVec = getJoystickVector();
+      rightStick = getRightJoystickVector();
     } catch (e) { /* ignore if not available */ }
+    const leftMag = joystickVec ? Math.hypot(joystickVec.x, joystickVec.y) : 0;
+    const rightMag = rightStick ? Math.hypot(rightStick.x, rightStick.y) : 0;
+    const aimActive = !!aim.aimActive || rightMag > 0.05;
 
     if (joystickVec && (Math.abs(joystickVec.x) > 0.01 || Math.abs(joystickVec.y) > 0.01)) {
-      // Compute desired rotation: ship forward vector corresponds to (sin(rot), -cos(rot))
-      const desired = Math.atan2(joystickVec.x, -joystickVec.y) * 180 / Math.PI; // degrees
-      let delta = desired - this.rotation;
-      // Normalize delta to [-180,180]
-      delta = ((delta + 180) % 360 + 360) % 360 - 180;
-      const step = Math.sign(delta) * Math.min(Math.abs(delta), this.rotationSpeed);
-      this.rotation += step;
-      // Thrust forward proportional to magnitude (simulate holding W)
-      const mag = Math.min(1, Math.hypot(joystickVec.x, joystickVec.y));
-      this.velocity.x -= Math.sin(-this.rotation * Math.PI / 180) * currentSpeed * mag;
-      this.velocity.y -= Math.cos(-this.rotation * Math.PI / 180) * currentSpeed * mag;
+      if (aimActive && typeof aim.aimRotation === 'number') {
+        // Turret mode: aim controls turret only; left stick purely controls travel direction
+        const mag = Math.min(1, leftMag);
+        this.velocity.x += joystickVec.x * currentSpeed * mag;
+        this.velocity.y += joystickVec.y * currentSpeed * mag;
+      } else {
+        // Original single-stick behavior: stick controls facing and thrust
+        const desired = Math.atan2(joystickVec.x, -joystickVec.y) * 180 / Math.PI; // degrees
+        let delta = desired - this.rotation;
+        delta = ((delta + 180) % 360 + 360) % 360 - 180;
+        const step = Math.sign(delta) * Math.min(Math.abs(delta), this.rotationSpeed);
+        this.rotation += step;
+        const mag = Math.min(1, leftMag);
+        this.velocity.x -= Math.sin(-this.rotation * Math.PI / 180) * currentSpeed * mag;
+        this.velocity.y -= Math.cos(-this.rotation * Math.PI / 180) * currentSpeed * mag;
+      }
     } else {
       // Keyboard fallback
       if (keys.a) {
